@@ -3,6 +3,8 @@ import random
 import winsound
 import csv
 import os
+import time
+import w2words
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton, 
                              QLineEdit, QLabel, QStackedWidget)
 from PyQt5.QtCore import Qt, QTimer
@@ -34,10 +36,32 @@ class TypingApp(QWidget):
         self.random_count = 0
         self.random_phase_limit = 20
         
+        self.week2_learning_flow = [
+            {"mode": "random", "chars": "QSDFGHJKLM", "duration": 300},
+            {"mode": "learn", "chars": "AZER"},
+            {"mode": "random", "chars": "AZER", "count": 20},
+            {"mode": "learn", "chars": "TYU"},
+            {"mode": "random", "chars": "TYU", "count": 20},
+            {"mode": "learn", "chars": "IOP"},
+            {"mode": "random", "chars": "IOP", "count": 20},
+            {"mode": "random", "chars": "AZERTYUIOP", "count": 40},
+            {"mode": "random", "chars": "AZERTYUIOPQSDFGHJKLM", "count": 60},
+        ]
+        self.week2_learning_phase_idx = 0
+        self.week2_phase_start = None
+        
         self.mode = ""
         self.target = ""
         self.score = 0
         self.user_name = ""
+        
+        self.practice_minute_timer = QTimer()
+        self.practice_minute_timer.timeout.connect(self.evaluate_practice_adaptivity)
+        self.practice_phase_start = None
+        self.practice_first_five_done = False
+        self.practice_letter_weights = {}
+        self.last_letter_accuracy = {}
+        self.week2_words = getattr(w2words, 'words', [])
         
         self.timer = QTimer()
         self.timer.timeout.connect(self.time_out)
@@ -199,36 +223,81 @@ class TypingApp(QWidget):
             self.repetition_count = 0
             self.in_random_phase = False
             self.random_count = 0
+            self.week2_learning_phase_idx = 0
+            self.week2_phase_start = time.time()
             self.result_output.hide()
             self.btn_ok.hide()
             self.btn_stop.show()
             self.learn_input.show()
+            if self.current_week_idx == 1:
+                self.week2_phase_start = time.time()
             self.pages.setCurrentIndex(2)
             self.update_learning_target()
 
     def start_practice(self):
         self.user_name = self.name_input.text().strip()
-        if self.user_name: self.pages.setCurrentIndex(3)
+        if self.user_name:
+            if self.mode == "LETTERS":
+                self.initialize_practice_adaptivity()
+            self.pages.setCurrentIndex(3)
 
     def update_learning_target(self):
         self.learn_input.blockSignals(True)
         self.learn_input.clear()
         self.learn_input.blockSignals(False)
+        if self.current_week_idx == 1 and self.week2_learning_phase_idx < len(self.week2_learning_flow):
+            self.update_learning_target_week2()
+            return
         steps = self.curriculum[self.weeks_keys[self.current_week_idx]]
         current_chars = steps[self.current_step_idx]
         if not self.in_random_phase:
             char_idx = self.repetition_count // 10
-            if char_idx < len(current_chars): self.target = current_chars[char_idx]
+            if char_idx < len(current_chars):
+                self.target = current_chars[char_idx]
             else:
                 self.in_random_phase = True
                 self.random_count = 0
                 self.update_learning_target()
                 return
-        else: self.target = random.choice(current_chars)
+        else:
+            self.target = random.choice(current_chars)
         self.learn_label.setText("")
         self.learn_label.setText(self.target)
         self.learn_input.setAccessibleName(self.target)
         self.learn_input.setFocus()
+
+    def update_learning_target_week2(self):
+        phase = self.week2_learning_flow[self.week2_learning_phase_idx]
+        mode = phase.get("mode")
+        chars = phase.get("chars", "")
+        self.learn_label.setText("")
+        if mode == "random":
+            if phase.get("duration"):
+                elapsed = time.time() - self.week2_phase_start
+                if elapsed >= phase["duration"]:
+                    self.advance_week2_phase()
+                    return
+            self.target = random.choice(chars)
+        elif mode == "learn":
+            char_idx = self.repetition_count // 10
+            if char_idx < len(chars):
+                self.target = chars[char_idx]
+            else:
+                self.advance_week2_phase()
+                return
+        self.learn_label.setText(self.target)
+        self.learn_input.setAccessibleName(self.target)
+        self.learn_input.setFocus()
+
+    def advance_week2_phase(self):
+        self.week2_learning_phase_idx += 1
+        self.repetition_count = 0
+        self.random_count = 0
+        self.week2_phase_start = time.time()
+        if self.week2_learning_phase_idx >= len(self.week2_learning_flow):
+            self.end_session()
+            return
+        self.update_learning_target_week2()
 
     def check_learn_input(self, text):
         if not text: return
@@ -236,15 +305,28 @@ class TypingApp(QWidget):
         if is_correct:
             winsound.Beep(1500, 100)
             self.log_data(self.target, "Correct")
-            if not self.in_random_phase: self.repetition_count += 1
-            else: self.random_count += 1
-            if self.in_random_phase and self.random_count >= self.random_phase_limit:
-                self.current_step_idx += 1
-                self.repetition_count = 0
-                self.in_random_phase = False
-                if self.current_step_idx >= len(self.curriculum[self.weeks_keys[self.current_week_idx]]):
-                    self.end_session()
-                    return
+            if self.current_week_idx == 1 and self.week2_learning_phase_idx < len(self.week2_learning_flow):
+                phase = self.week2_learning_flow[self.week2_learning_phase_idx]
+                if phase["mode"] == "learn":
+                    self.repetition_count += 1
+                    if self.repetition_count >= len(phase["chars"]) * 10:
+                        self.advance_week2_phase()
+                else:
+                    self.random_count += 1
+                    if self.random_count >= phase.get("count", self.random_phase_limit):
+                        self.advance_week2_phase()
+            else:
+                if not self.in_random_phase:
+                    self.repetition_count += 1
+                else:
+                    self.random_count += 1
+                    if self.random_count >= self.random_phase_limit:
+                        self.current_step_idx += 1
+                        self.repetition_count = 0
+                        self.in_random_phase = False
+                        if self.current_step_idx >= len(self.curriculum[self.weeks_keys[self.current_week_idx]]):
+                            self.end_session()
+                            return
             self.update_learning_target()
         elif len(text) >= len(self.target):
             winsound.Beep(400, 200)
@@ -279,9 +361,69 @@ class TypingApp(QWidget):
         self.btn_ok.show()
         self.btn_ok.setFocus()
 
+    def initialize_practice_adaptivity(self):
+        self.practice_phase_start = time.time()
+        self.practice_first_five_done = False
+        self.practice_letter_weights = {c: 1.0 for c in "AZERTYUIOPQSDFGHJKLM"}
+        self.last_letter_accuracy = {}
+        if not self.practice_minute_timer.isActive():
+            self.practice_minute_timer.start(60000)
+
+    def collect_practice_stats(self):
+        clean_name = "".join(c for c in self.user_name if c.isalnum() or c in (' ', '_')).rstrip()
+        file_path = os.path.join(self.base_dir, f"{clean_name}_Week_{self.current_week_idx + 1}.csv")
+        if not os.path.isfile(file_path):
+            return {}
+        stats = {}
+        try:
+            with open(file_path, mode='r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    char = row["Character"].upper()
+                    if len(char) != 1:
+                        continue
+                    if char not in stats:
+                        stats[char] = {"correct": 0, "total": 0}
+                    stats[char]["total"] += 1
+                    if row["Status"] == "Correct":
+                        stats[char]["correct"] += 1
+        except:
+            return {}
+        return stats
+
+    def evaluate_practice_adaptivity(self):
+        current_stats = self.collect_practice_stats()
+        for letter, stats in current_stats.items():
+            total = stats["total"]
+            correct = stats["correct"]
+            current_accuracy = (correct / total) if total > 0 else 0
+            previous_accuracy = self.last_letter_accuracy.get(letter, current_accuracy)
+            if current_accuracy > previous_accuracy + 0.05:
+                self.practice_letter_weights[letter] = max(0.5, self.practice_letter_weights.get(letter, 1.0) * 0.8)
+            elif current_accuracy < previous_accuracy - 0.05:
+                self.practice_letter_weights[letter] = min(5.0, self.practice_letter_weights.get(letter, 1.0) * 1.3)
+            self.last_letter_accuracy[letter] = current_accuracy
+        if time.time() - self.practice_phase_start >= 300:
+            self.practice_first_five_done = True
+
+    def choose_weighted_letter(self, letters):
+        weights = [self.practice_letter_weights.get(letter, 1.0) for letter in letters]
+        total = sum(weights)
+        if total <= 0:
+            return random.choice(letters)
+        pick = random.random() * total
+        current = 0
+        for letter, weight in zip(letters, weights):
+            current += weight
+            if pick <= current:
+                return letter
+        return letters[-1]
+
     def start_game(self, mode):
         self.mode = mode
         self.score = 0
+        if self.mode == "LETTERS" and self.current_week_idx == 1:
+            self.initialize_practice_adaptivity()
         self.pages.setCurrentIndex(4)
         self.next_round()
 
@@ -290,13 +432,23 @@ class TypingApp(QWidget):
         self.input_field.blockSignals(True)
         self.input_field.clear()
         self.input_field.blockSignals(False)
-        weaks = self.get_weak_chars()
         if self.mode == "LETTERS":
-            week_letters = self.get_current_week_letters()
-            self.target = random.choice(weaks) if weaks and random.random() < 0.6 else random.choice(week_letters)
+            if self.current_week_idx == 1:
+                if not self.practice_first_five_done:
+                    self.target = self.choose_weighted_letter("AZERTYUIOP")
+                else:
+                    letters = "AZERTYUIOPQSDFGHJKLM"
+                    self.target = self.choose_weighted_letter(letters)
+            else:
+                weaks = self.get_weak_chars()
+                week_letters = self.get_current_week_letters()
+                self.target = random.choice(weaks) if weaks and random.random() < 0.6 else random.choice(week_letters)
         else:
-            steps = self.curriculum[self.weeks_keys[self.current_week_idx]]
-            self.target = random.choice(steps)
+            if self.current_week_idx == 1 and self.week2_words:
+                self.target = random.choice(self.week2_words).upper()
+            else:
+                steps = self.curriculum[self.weeks_keys[self.current_week_idx]]
+                self.target = random.choice(steps)
         self.target_label.setText("")
         self.target_label.setText(self.target)
         self.input_field.setAccessibleName(self.target)
@@ -326,6 +478,8 @@ class TypingApp(QWidget):
 
     def stop_game(self):
         self.timer.stop()
+        if self.practice_minute_timer.isActive():
+            self.practice_minute_timer.stop()
         self.pages.setCurrentIndex(3)
 
 if __name__ == "__main__":
