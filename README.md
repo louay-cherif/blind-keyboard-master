@@ -5,8 +5,8 @@ This software follows the Adapted Informatics Initiative Program curriculum to t
 # requirements:
 Before using the application, make sure you have all the following installed on your machine:
 * A windows operating system: to run, this app requires a windows operating system.
-* Python 3: make sure you download, install and add to path Python 3 ffrom the official link.
-* PyQt5 dependency: from your cmd copy the following command: pip install PyQt5
-wait for the dependency to be successfully installed
+* Python 3: make sure you download, install and add to path Python 3 ffrom the official website.
+* dependencies: from your cmd copy the following command: pip install PyQt5, accessible_output2
+wait for the dependencies to be successfully installed
 
 Please note that this app is tested with the screenreader NVDA, so support for other screenreaders is not guaranteed.
