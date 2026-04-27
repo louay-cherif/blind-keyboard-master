@@ -17,11 +17,8 @@ class TypingApp(QWidget):
         
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
         
-        self.alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        self.words = ["ALGORITHME", "INTERFACE", "VARIABLE", "FONCTION", "BOUTON", "LOGICIEL"]
-        
         self.curriculum = {
-            "Semaine 1: Ligne de Base": ["QSDF", "GHJ", "KLM", "QSDFGHJKLM", "LKJHGFDSQ"],
+            "Semaine 1: Ligne de Base": ["QSDF", "GHJ", "KLM", "QSDFGHJKLM"],
             "Semaine 2: Ligne Supérieure": ["AZER", "TYU", "IOP", "AZERTYUIOP"],
             "Semaine 3: Ligne Inférieure": ["WXC", "VBN", "WXCVBN"],
             "Semaine 4: Mixage des Lignes": ["QSDFGHJKLM", "AZERTYUIOP", "WXCVBN", "AZERTYUIOPQSDFGHJKLMWXCVBN"],
@@ -85,10 +82,28 @@ class TypingApp(QWidget):
         layout.addWidget(self.pages)
         self.setLayout(layout)
 
+    def get_clean_username(self):
+        """Extract and clean username for file naming."""
+        return "".join(c for c in self.user_name if c.isalnum() or c in (' ', '_')).rstrip()
+
+    def get_user_csv_path(self):
+        """Generate the CSV file path for the current user and week."""
+        clean_name = self.get_clean_username()
+        return os.path.join(self.base_dir, f"{clean_name}_Week_{self.current_week_idx + 1}.csv")
+
+    def clear_input_field(self, field):
+        """Safely clear an input field without triggering signals."""
+        field.blockSignals(True)
+        field.clear()
+        field.blockSignals(False)
+
+    def is_week2(self):
+        """Check if current week is Week 2 (index 1)."""
+        return self.current_week_idx == 1
+
     def log_data(self, char, status):
         if not self.user_name: return
-        clean_name = "".join(c for c in self.user_name if c.isalnum() or c in (' ', '_')).rstrip()
-        file_path = os.path.join(self.base_dir, f"{clean_name}_Week_{self.current_week_idx + 1}.csv")
+        file_path = self.get_user_csv_path()
         file_exists = os.path.isfile(file_path)
         try:
             with open(file_path, mode='a', newline='', encoding='utf-8') as f:
@@ -100,8 +115,7 @@ class TypingApp(QWidget):
             pass
 
     def get_weak_chars(self):
-        clean_name = "".join(c for c in self.user_name if c.isalnum() or c in (' ', '_')).rstrip()
-        file_path = os.path.join(self.base_dir, f"{clean_name}_Week_{self.current_week_idx + 1}.csv")
+        file_path = self.get_user_csv_path()
         if not os.path.isfile(file_path): return []
         stats = {}
         try:
@@ -224,13 +238,12 @@ class TypingApp(QWidget):
             self.in_random_phase = False
             self.random_count = 0
             self.week2_learning_phase_idx = 0
-            self.week2_phase_start = time.time()
+            if self.is_week2():
+                self.week2_phase_start = time.time()
             self.result_output.hide()
             self.btn_ok.hide()
             self.btn_stop.show()
             self.learn_input.show()
-            if self.current_week_idx == 1:
-                self.week2_phase_start = time.time()
             self.pages.setCurrentIndex(2)
             self.update_learning_target()
 
@@ -242,10 +255,8 @@ class TypingApp(QWidget):
             self.pages.setCurrentIndex(3)
 
     def update_learning_target(self):
-        self.learn_input.blockSignals(True)
-        self.learn_input.clear()
-        self.learn_input.blockSignals(False)
-        if self.current_week_idx == 1 and self.week2_learning_phase_idx < len(self.week2_learning_flow):
+        self.clear_input_field(self.learn_input)
+        if self.is_week2() and self.week2_learning_phase_idx < len(self.week2_learning_flow):
             self.update_learning_target_week2()
             return
         steps = self.curriculum[self.weeks_keys[self.current_week_idx]]
@@ -305,7 +316,7 @@ class TypingApp(QWidget):
         if is_correct:
             winsound.Beep(1500, 100)
             self.log_data(self.target, "Correct")
-            if self.current_week_idx == 1 and self.week2_learning_phase_idx < len(self.week2_learning_flow):
+            if self.is_week2() and self.week2_learning_phase_idx < len(self.week2_learning_flow):
                 phase = self.week2_learning_flow[self.week2_learning_phase_idx]
                 if phase["mode"] == "learn":
                     self.repetition_count += 1
@@ -331,17 +342,14 @@ class TypingApp(QWidget):
         elif len(text) >= len(self.target):
             winsound.Beep(400, 200)
             self.log_data(self.target, "Error")
-            self.learn_input.blockSignals(True)
-            self.learn_input.clear()
-            self.learn_input.blockSignals(False)
+            self.clear_input_field(self.learn_input)
 
     def end_session(self):
         self.learn_input.hide()
         self.btn_stop.hide()
         self.learn_label.setText("FIN")
         
-        clean_name = "".join(c for c in self.user_name if c.isalnum() or c in (' ', '_')).rstrip()
-        file_path = os.path.join(self.base_dir, f"{clean_name}_Week_{self.current_week_idx + 1}.csv")
+        file_path = self.get_user_csv_path()
         
         total = 0
         correct = 0
@@ -370,8 +378,7 @@ class TypingApp(QWidget):
             self.practice_minute_timer.start(60000)
 
     def collect_practice_stats(self):
-        clean_name = "".join(c for c in self.user_name if c.isalnum() or c in (' ', '_')).rstrip()
-        file_path = os.path.join(self.base_dir, f"{clean_name}_Week_{self.current_week_idx + 1}.csv")
+        file_path = self.get_user_csv_path()
         if not os.path.isfile(file_path):
             return {}
         stats = {}
@@ -422,18 +429,16 @@ class TypingApp(QWidget):
     def start_game(self, mode):
         self.mode = mode
         self.score = 0
-        if self.mode == "LETTERS" and self.current_week_idx == 1:
+        if self.mode == "LETTERS" and self.is_week2():
             self.initialize_practice_adaptivity()
         self.pages.setCurrentIndex(4)
         self.next_round()
 
     def next_round(self):
         self.timer.stop()
-        self.input_field.blockSignals(True)
-        self.input_field.clear()
-        self.input_field.blockSignals(False)
+        self.clear_input_field(self.input_field)
         if self.mode == "LETTERS":
-            if self.current_week_idx == 1:
+            if self.is_week2():
                 if not self.practice_first_five_done:
                     self.target = self.choose_weighted_letter("AZERTYUIOP")
                 else:
@@ -444,7 +449,7 @@ class TypingApp(QWidget):
                 week_letters = self.get_current_week_letters()
                 self.target = random.choice(weaks) if weaks and random.random() < 0.6 else random.choice(week_letters)
         else:
-            if self.current_week_idx == 1 and self.week2_words:
+            if self.is_week2() and self.week2_words:
                 self.target = random.choice(self.week2_words).upper()
             else:
                 steps = self.curriculum[self.weeks_keys[self.current_week_idx]]
@@ -467,9 +472,7 @@ class TypingApp(QWidget):
         elif len(text) >= len(self.target):
             winsound.Beep(400, 200)
             self.log_data(self.target, "Error")
-            self.input_field.blockSignals(True)
-            self.input_field.clear()
-            self.input_field.blockSignals(False)
+            self.clear_input_field(self.input_field)
             self.next_round()
 
     def time_out(self):
