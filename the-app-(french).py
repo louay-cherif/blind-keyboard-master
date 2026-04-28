@@ -4,6 +4,7 @@ import winsound
 import csv
 import os
 import time
+import w1words
 import w2words
 import w3words
 
@@ -31,7 +32,17 @@ class TypingApp(QWidget):
                 "name": "Semaine 1: Ligne de Base",
                 "steps": ["QSDF", "GHJ", "KLM", "QSDFGHJKLM"],
                 "practice_letters": ["QSDFGHJKLM"],
-                "words": [],
+                "words": getattr(w1words, "words", []),
+                "learning_flow": [
+                    {"mode": "learn", "chars": "QSDF"},
+                    {"mode": "random", "chars": "QSDF", "duration": 300},
+                    {"mode": "learn", "chars": "GHJ"},
+                    {"mode": "random", "chars": "GHJ", "count": 40},
+                    {"mode": "random", "chars": "QSDFGHJ", "duration": 300},
+                    {"mode": "learn", "chars": "KLM"},
+                    {"mode": "random", "chars": "KLM", "count": 40},
+                    {"mode": "random", "chars": "QSDFGHJKLM", "count": 250},
+                ],
             },
             {
                 "name": "Semaine 2: Ligne Supérieure",
@@ -79,7 +90,7 @@ class TypingApp(QWidget):
                 "steps": ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", ",;:!?", "./§", "ALL_COMBINED"],
             },
         ]
-        
+                
         self.current_week_idx = 0
         self.current_step_idx = 0
         self.repetition_count = 0
@@ -333,6 +344,9 @@ class TypingApp(QWidget):
                 if elapsed >= phase["duration"]:
                     self.advance_week_learning_phase()
                     return
+            if phase.get("count") and self.repetition_count >= phase["count"]:
+                self.advance_week_learning_phase()
+                return
             self.target = random.choice(chars)
         elif mode == "learn":
             char_idx = self.repetition_count // 10
@@ -356,11 +370,25 @@ class TypingApp(QWidget):
     def check_learn_input(self, text):
         if not text: return
         is_correct = (text[-1].upper() == self.target.upper()) if self.current_week_idx < 4 else (text == self.target)
+        
+        # Determine if we should log (skip logging for learn-mode phases)
+        should_log = True
+        if self.has_current_week_learning_flow() and self.week_learning_phase_idx < len(self.get_current_week_learning_flow()):
+            phase = self.get_current_week_learning_flow()[self.week_learning_phase_idx]
+            if phase.get("mode") == "learn":
+                should_log = False
+        
         if is_correct:
-            winsound.Beep(1500, 100); self.log_data(self.target, "Correct")
+            winsound.Beep(1500, 100)
+            if should_log:
+                self.log_data(self.target, "Correct")
+            self.repetition_count += 1
             self.update_learning_target()
         elif len(text) >= len(self.target):
-            winsound.Beep(400, 200); self.log_data(self.target, "Error"); self.clear_input_field(self.learn_input)
+            winsound.Beep(400, 200)
+            if should_log:
+                self.log_data(self.target, "Error")
+            self.clear_input_field(self.learn_input)
 
     def end_session(self):
         self.learn_input.hide(); self.btn_stop.hide(); self.learn_label.setText("FIN")
