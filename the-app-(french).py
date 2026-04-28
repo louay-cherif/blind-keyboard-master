@@ -333,6 +333,12 @@ class TypingApp(QWidget):
         else:
             self.target = random.choice(current_chars)
         self.learn_label.setText(self.target)
+        
+        self.learn_input.blockSignals(True)
+        self.learn_input.setAccessibleName("")
+        self.learn_input.setText(self.target)
+        self.learn_input.blockSignals(False)
+        
         if self.speaker: self.speaker.output(self.target)
 
     def update_learning_target_flow(self):
@@ -356,6 +362,12 @@ class TypingApp(QWidget):
                 self.advance_week_learning_phase()
                 return
         self.learn_label.setText(self.target)
+        
+        self.learn_input.blockSignals(True)
+        self.learn_input.setAccessibleName("")
+        self.learn_input.setText(self.target)
+        self.learn_input.blockSignals(False)
+
         if self.speaker:
             self.speaker.output(self.target)
 
@@ -369,9 +381,10 @@ class TypingApp(QWidget):
 
     def check_learn_input(self, text):
         if not text: return
+        if text == self.target: return
+        
         is_correct = (text[-1].upper() == self.target.upper()) if self.current_week_idx < 4 else (text == self.target)
         
-        # Determine if we should log (skip logging for learn-mode phases)
         should_log = True
         if self.has_current_week_learning_flow() and self.week_learning_phase_idx < len(self.get_current_week_learning_flow()):
             phase = self.get_current_week_learning_flow()[self.week_learning_phase_idx]
@@ -384,11 +397,11 @@ class TypingApp(QWidget):
                 self.log_data(self.target, "Correct")
             self.repetition_count += 1
             self.update_learning_target()
-        elif len(text) >= len(self.target):
+        elif len(text) >= (len(self.target) + 1):
             winsound.Beep(400, 200)
             if should_log:
                 self.log_data(self.target, "Error")
-            self.clear_input_field(self.learn_input)
+            self.update_learning_target()
 
     def end_session(self):
         self.learn_input.hide(); self.btn_stop.hide(); self.learn_label.setText("FIN")
