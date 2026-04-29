@@ -75,12 +75,15 @@ class AppFrontend(QWidget):
         self.name_input.setPlaceholderText("Entrez votre nom...")
         btn_learn = QPushButton("Apprendre")
         btn_practice = QPushButton("Pratique")
+        btn_back = QPushButton("Retour")
         btn_learn.clicked.connect(self.start_learning)
         btn_practice.clicked.connect(self.start_practice)
+        btn_back.clicked.connect(lambda: self.pages.setCurrentIndex(0))
         layout.addWidget(QLabel("IDENTIFICATION"))
         layout.addWidget(self.name_input)
         layout.addWidget(btn_learn)
         layout.addWidget(btn_practice)
+        layout.addWidget(btn_back)
         page.setLayout(layout)
         self.pages.addWidget(page)
 
@@ -300,8 +303,8 @@ class AppFrontend(QWidget):
 
     def check_input(self, text):
         """Validate game input"""
-            result = self.logic.check_game_input(text, self.logic.target)
-           if result is None:
+        result = self.logic.check_game_input(text, self.logic.target)
+        if result is None:
             return
         
         if result["correct"]:
