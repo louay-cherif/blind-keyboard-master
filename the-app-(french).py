@@ -1,3 +1,5 @@
+# the imports
+
 import sys
 import random
 import winsound
@@ -14,19 +16,15 @@ try:
 except ImportError:
     HAS_ACCESSIBLE = False
 
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton, 
-                             QLineEdit, QLabel, QStackedWidget)
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QApplication
 
-class TypingApp(QWidget):
+
+class AppBackend:
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Adapted Informatics Initiative Official Keyboard typing app for visually impaired people")
-        self.resize(800, 600)
-        
         self.speaker = auto.Auto() if HAS_ACCESSIBLE else None
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
         
+        # I am thinking about figuring out how to to get rid of this variable and instead call the week data from the week file, that will make the code easier to maintain. Now I'll leave it as it is and see it later
         self.weeks = [
             {
                 "name": "Semaine 1: Ligne de Base",
@@ -90,7 +88,7 @@ class TypingApp(QWidget):
                 "steps": ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", ",;:!?", "./§", "ALL_COMBINED"],
             },
         ]
-                
+        
         self.current_week_idx = 0
         self.current_step_idx = 0
         self.repetition_count = 0
@@ -105,52 +103,27 @@ class TypingApp(QWidget):
         self.user_name = ""
         
         self.practice_round_counter = 0
-        
-        self.practice_minute_timer = QTimer()
-        self.practice_minute_timer.timeout.connect(self.evaluate_practice_adaptivity)
         self.practice_letter_weights = {}
         self.last_letter_accuracy = {}
-        
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.time_out)
 
-        self.setStyleSheet("""
-            QWidget { background-color: #0a0a12; color: #ffffff; font-family: Arial; font-size: 24px; }
-            QPushButton { background-color: #16213e; border-radius: 12px; padding: 15px; color: white; border: 2px solid #e94560; margin: 5px; }
-            QPushButton:hover { background-color: #e94560; }
-            QLineEdit { padding: 18px; background-color: #1a1a2e; color: #0fecb0; border: 2px solid #0fecb0; border-radius: 10px; text-align: center; }
-            QLineEdit[readOnly="true"] { color: #f9d342; border-color: #f9d342; }
-        """)
-
-        self.pages = QStackedWidget()
-        self.setup_week_selection()
-        self.setup_identification_page()
-        self.setup_learning_page()
-        self.setup_practice_selection()
-        self.setup_game_page()
-        
-        layout = QVBoxLayout()
-        layout.addWidget(self.pages)
-        self.setLayout(layout)
-
+    # returns a cleaned version of the username for log file naming
     def get_clean_username(self):
         return "".join(c for c in self.user_name if c.isalnum() or c in (' ', '_')).rstrip()
 
+    # returns a log file path with the file named using the cleaned username and current week index
     def get_user_csv_path(self):
         clean_name = self.get_clean_username()
         return os.path.join(self.base_dir, f"{clean_name}_Week_{self.current_week_idx + 1}.csv")
 
-    def clear_input_field(self, field):
-        field.blockSignals(True)
-        field.clear()
-        field.blockSignals(False)
-
+    # returns the current week data dictionary
     def current_week(self):
         return self.weeks[self.current_week_idx]
 
+    # returns the steps for the current week, or an empty list if not defined
     def get_current_week_steps(self):
         return self.current_week().get("steps", [])
 
+    # returns the defined letters for the current week, or extracts them from steps if not explicitly defined
     def get_current_week_letters(self):
         letters = self.current_week().get("letters")
         if letters:
@@ -173,6 +146,7 @@ class TypingApp(QWidget):
         idx = min(len(practice_letters) - 1, self.practice_round_counter // 100)
         return practice_letters[idx]
 
+    # This function calculates the accuracy for each letter in the current week's practice set based on the user's logged data, and returns a dictionary mapping each letter to its accuracy from 0 to 1 (or None if no data is available for the letter or the entire file is missing).
     def get_current_week_letter_stats(self):
         letters = self.get_current_week_letters()
         stats = {letter: {"correct": 0, "total": 0} for letter in letters}
@@ -200,6 +174,8 @@ class TypingApp(QWidget):
                 accuracy[letter] = data["correct"] / data["total"]
         return accuracy
 
+
+    # This function computes a practice weight for a given letter based on its accuracy and the previous accuracy. The weight is higher for letters with lower accuracy, and it adjusts based on whether the accuracy has improved or worsened compared to the previous accuracy. The weight is constrained to be between 1 and 20.
     def compute_practice_weight(self, accuracy, previous_accuracy=None):
         if accuracy is None:
             base = 10
@@ -218,6 +194,8 @@ class TypingApp(QWidget):
 
         return min(max(base, 1), 20)
 
+
+    # This function initializes the practice letter weights by calculating the accuracy for each letter using the get_current_week_letter_stats function and then computing the practice weight for each letter using the compute_practice_weight function. The resulting weights are stored in the practice_letter_weights dictionary, and the last_letter_accuracy is updated to keep track of the current accuracies for future comparisons.
     def initialize_practice_weights(self):
         accuracies = self.get_current_week_letter_stats()
         self.practice_letter_weights = {}
@@ -225,6 +203,8 @@ class TypingApp(QWidget):
             self.practice_letter_weights[letter] = self.compute_practice_weight(accuracy)
         self.last_letter_accuracy = accuracies
 
+
+    # This function updates the practice letter weights by recalculating the accuracies for each letter and comparing them to the previous accuracies stored in last_letter_accuracy. The compute_practice_weight function is used to adjust the weights based on the new accuracies and whether they have improved or worsened compared to the previous values. The updated weights are stored in practice_letter_weights, and last_letter_accuracy is updated with the new accuracies for future comparisons.
     def update_practice_weights(self):
         accuracies = self.get_current_week_letter_stats()
         for letter, accuracy in accuracies.items():
@@ -232,14 +212,18 @@ class TypingApp(QWidget):
             self.practice_letter_weights[letter] = self.compute_practice_weight(accuracy, previous)
         self.last_letter_accuracy = accuracies
 
+
     def has_current_week_learning_flow(self):
         return bool(self.current_week().get("learning_flow"))
 
     def get_current_week_learning_flow(self):
         return self.current_week().get("learning_flow", [])
 
+
+    # This function logs the user's input for a given character and its correctness status to a CSV file. If the user_name is not set, it does nothing. It constructs the file path using the get_user_csv_path function, checks if the file already exists to determine if headers need to be written, and then appends a new row with the character and its status ("Correct" or "Incorrect"). If any error occurs during file operations, it silently fails without crashing the application.
     def log_data(self, char, status):
-        if not self.user_name: return
+        if not self.user_name: 
+            return
         file_path = self.get_user_csv_path()
         file_exists = os.path.isfile(file_path)
         try:
@@ -248,142 +232,61 @@ class TypingApp(QWidget):
                 if not file_exists:
                     writer.writerow(["Character", "Status"])
                 writer.writerow([char, status])
-        except: pass
+        except: 
+            pass
 
-    def setup_week_selection(self):
-        page = QWidget(); layout = QVBoxLayout()
-        layout.addWidget(QLabel("Choisissez votre semaine :"))
-        for i, week in enumerate(self.weeks):
-            btn = QPushButton(week["name"])
-            btn.clicked.connect(lambda checked, idx=i: self.select_week(idx))
-            layout.addWidget(btn)
-        page.setLayout(layout); self.pages.addWidget(page)
 
-    def select_week(self, idx):
-        self.current_week_idx = idx
-        self.pages.setCurrentIndex(1)
-
-    def setup_identification_page(self):
-        page = QWidget(); layout = QVBoxLayout()
-        self.name_input = QLineEdit(); self.name_input.setPlaceholderText("Entrez votre nom...")
-        btn_learn = QPushButton("Apprendre"); btn_practice = QPushButton("Pratique")
-        btn_learn.clicked.connect(self.start_learning)
-        btn_practice.clicked.connect(self.start_practice)
-        layout.addWidget(QLabel("IDENTIFICATION")); layout.addWidget(self.name_input)
-        layout.addWidget(btn_learn); layout.addWidget(btn_practice)
-        page.setLayout(layout); self.pages.addWidget(page)
-
-    def setup_learning_page(self):
-        page = QWidget(); layout = QVBoxLayout()
-        self.result_output = QLineEdit(); self.result_output.setReadOnly(True); self.result_output.hide()
-        self.learn_label = QLabel(""); self.learn_label.setAlignment(Qt.AlignCenter)
-        self.learn_label.setStyleSheet("font-size: 130px; color: #e94560; font-weight: bold;")
-        self.learn_input = QLineEdit(); self.learn_input.textChanged.connect(self.check_learn_input)
-        self.btn_ok = QPushButton("OK"); self.btn_ok.hide()
-        self.btn_ok.clicked.connect(lambda: self.pages.setCurrentIndex(1))
-        self.btn_stop = QPushButton("Quitter"); self.btn_stop.clicked.connect(lambda: self.pages.setCurrentIndex(1))
-        layout.addWidget(self.result_output); layout.addWidget(self.learn_label)
-        layout.addWidget(self.learn_input); layout.addWidget(self.btn_ok); layout.addWidget(self.btn_stop)
-        page.setLayout(layout); self.pages.addWidget(page)
-
-    def setup_practice_selection(self):
-        page = QWidget(); layout = QVBoxLayout()
-        btn_letters = QPushButton("Pratique des Lettres"); btn_words = QPushButton("Pratique des Mots"); btn_back = QPushButton("Retour")
-        btn_letters.clicked.connect(lambda: self.start_game("LETTERS")); btn_words.clicked.connect(lambda: self.start_game("WORDS"))
-        btn_back.clicked.connect(lambda: self.pages.setCurrentIndex(1))
-        layout.addWidget(QLabel("MODE PRATIQUE")); layout.addWidget(btn_letters); layout.addWidget(btn_words); layout.addWidget(btn_back)
-        page.setLayout(layout); self.pages.addWidget(page)
-
-    def setup_game_page(self):
-        page = QWidget(); layout = QVBoxLayout()
-        self.target_label = QLabel(""); self.target_label.setAlignment(Qt.AlignCenter)
-        self.target_label.setStyleSheet("font-size: 100px; color: #0fecb0; font-weight: bold;")
-        self.input_field = QLineEdit(); self.input_field.textChanged.connect(self.check_input)
-        self.score_label = QLabel("Score: 0")
-        btn_quit = QPushButton("Quitter"); btn_quit.clicked.connect(self.stop_game)
-        layout.addWidget(self.target_label); layout.addWidget(self.input_field); layout.addWidget(self.score_label); layout.addWidget(btn_quit)
-        page.setLayout(layout); self.pages.addWidget(page)
-
-    def start_learning(self):
-        self.user_name = self.name_input.text().strip()
-        if self.user_name:
-            self.current_step_idx = 0; self.repetition_count = 0; self.in_random_phase = False; self.week_learning_phase_idx = 0
-            if self.has_current_week_learning_flow():
-                self.week_phase_start = time.time()
-            self.result_output.hide(); self.btn_ok.hide(); self.btn_stop.show(); self.learn_input.show()
-            self.pages.setCurrentIndex(2); self.update_learning_target()
-
-    def start_practice(self):
-        self.user_name = self.name_input.text().strip()
-        if self.user_name: self.pages.setCurrentIndex(3)
-
-    def update_learning_target(self):
-        self.clear_input_field(self.learn_input)
+            # this function works for the learning section only
+    def generate_learning_target(self):
+        """Generate the next target character for learning phase."""
         if self.has_current_week_learning_flow() and self.week_learning_phase_idx < len(self.get_current_week_learning_flow()):
-            self.update_learning_target_flow()
-            return
+            phase = self.get_current_week_learning_flow()[self.week_learning_phase_idx]
+            mode = phase.get("mode")
+            chars = phase.get("chars", "")
+            
+            if mode == "random":
+                if phase.get("duration"):
+                    elapsed = time.time() - self.week_phase_start
+                    if elapsed >= phase["duration"]:
+                        return None  # Signal to advance phase
+                if phase.get("count") and self.repetition_count >= phase["count"]:
+                    return None  # Signal to advance phase
+                self.target = random.choice(chars)
+            elif mode == "learn":
+                char_idx = self.repetition_count // 10
+                if char_idx < len(chars):
+                    self.target = chars[char_idx]
+                else:
+                    return None  # Signal to advance phase
+            return self.target
+        
+        # Standard step-based learning
         steps = self.get_current_week_steps()
         current_chars = steps[self.current_step_idx]
         if not self.in_random_phase:
             char_idx = self.repetition_count // 10
-            if char_idx < len(current_chars): self.target = current_chars[char_idx]
+            if char_idx < len(current_chars):
+                self.target = current_chars[char_idx]
             else:
-                self.in_random_phase = True; self.update_learning_target()
-                return
+                self.in_random_phase = True
+                return self.generate_learning_target()
         else:
             self.target = random.choice(current_chars)
-        self.learn_label.setText(self.target)
-        
-        self.learn_input.blockSignals(True)
-        self.learn_input.setAccessibleName("")
-        self.learn_input.setText(self.target)
-        self.learn_input.blockSignals(False)
-        
-        if self.speaker: self.speaker.output(self.target)
+        return self.target
 
-    def update_learning_target_flow(self):
-        phase = self.get_current_week_learning_flow()[self.week_learning_phase_idx]
-        mode = phase.get("mode"); chars = phase.get("chars", "")
-        if mode == "random":
-            if phase.get("duration"):
-                elapsed = time.time() - self.week_phase_start
-                if elapsed >= phase["duration"]:
-                    self.advance_week_learning_phase()
-                    return
-            if phase.get("count") and self.repetition_count >= phase["count"]:
-                self.advance_week_learning_phase()
-                return
-            self.target = random.choice(chars)
-        elif mode == "learn":
-            char_idx = self.repetition_count // 10
-            if char_idx < len(chars):
-                self.target = chars[char_idx]
-            else:
-                self.advance_week_learning_phase()
-                return
-        self.learn_label.setText(self.target)
-        
-        self.learn_input.blockSignals(True)
-        self.learn_input.setAccessibleName("")
-        self.learn_input.setText(self.target)
-        self.learn_input.blockSignals(False)
-
-        if self.speaker:
-            self.speaker.output(self.target)
 
     def advance_week_learning_phase(self):
-        self.week_learning_phase_idx += 1; self.repetition_count = 0
+        self.week_learning_phase_idx += 1
+        self.repetition_count = 0
         self.week_phase_start = time.time()
-        if self.week_learning_phase_idx >= len(self.get_current_week_learning_flow()):
-            self.end_session()
-            return
-        self.update_learning_target_flow()
 
-    def check_learn_input(self, text):
-        if not text: return
-        if text == self.target: return
+
+    def check_learning_input(self, text, target):
+        """Validate learning input and return result."""
+        if not text:
+            return None
         
-        is_correct = (text[-1].upper() == self.target.upper()) if self.current_week_idx < 4 else (text == self.target)
+        is_correct = (text[-1].upper() == target.upper()) if self.current_week_idx < 4 else (text == target)
         
         should_log = True
         if self.has_current_week_learning_flow() and self.week_learning_phase_idx < len(self.get_current_week_learning_flow()):
@@ -391,44 +294,27 @@ class TypingApp(QWidget):
             if phase.get("mode") == "learn":
                 should_log = False
         
-        if is_correct:
-            winsound.Beep(1500, 100)
-            if should_log:
-                self.log_data(self.target, "Correct")
-            self.repetition_count += 1
-            self.update_learning_target()
-        elif len(text) >= (len(self.target) + 1):
-            winsound.Beep(400, 200)
-            if should_log:
-                self.log_data(self.target, "Error")
-            self.update_learning_target()
+        return {
+            "correct": is_correct,
+            "should_log": should_log,
+            "should_clear": len(text) >= len(target)
+        }
 
-    def end_session(self):
-        self.learn_input.hide(); self.btn_stop.hide(); self.learn_label.setText("FIN")
-        self.result_output.setText("Session terminee."); self.result_output.show(); self.btn_ok.show(); self.btn_ok.setFocus()
-
-    def evaluate_practice_adaptivity(self):
-        if self.mode != "LETTERS":
-            return
-        if not self.practice_letter_weights:
-            self.initialize_practice_weights()
-            return
-        self.update_practice_weights()
-
-    def start_game(self, mode):
-        self.mode = mode
-        self.score = 0
-        self.practice_round_counter = 0
-        self.pages.setCurrentIndex(4)
-        if mode == "LETTERS":
-            self.initialize_practice_weights()
-            self.practice_minute_timer.start(60000)
-        self.next_round()
-
-    def next_round(self):
-        self.timer.stop()
-        self.clear_input_field(self.input_field)
+    def check_game_input(self, text, target):
+        """Validate game input and return result."""
+        if not text:
+            return None
         
+        is_correct = text.upper() == target.upper()
+        should_clear = len(text) >= len(target)
+        
+        return {
+            "correct": is_correct,
+            "should_clear": should_clear
+        }
+
+    def generate_game_target(self):
+        """Generate next target for game/practice."""
         if self.mode == "LETTERS":
             letters = self.get_current_week_practice_letters()
             if self.practice_letter_weights and self.practice_round_counter >= 100:
@@ -436,71 +322,45 @@ class TypingApp(QWidget):
                 self.target = random.choices(letters, weights=weights, k=1)[0]
             else:
                 self.target = random.choice(letters)
-            self.target_label.setText(self.target)
-            if self.speaker:
-                self.speaker.output(self.target)
-            self.input_field.setEnabled(True)
-            self.input_field.setFocus()
-            self.timer.start(5000)
-            self.practice_round_counter += 1
-        else:
+        else:  # WORDS mode
             week_words = self.get_current_week_words()
             if week_words:
                 self.target = random.choice(week_words).upper()
             else:
                 steps = self.get_current_week_steps()
                 self.target = random.choice(steps)
-            wait_time = len(self.target) * 2000
+        
+        return self.target
 
-            self.target_label.setText(self.target)
-            
-            if self.speaker:
-                self.input_field.setEnabled(False) 
-                spelling = ", ".join(list(self.target))
-                self.speaker.output(spelling)
-                
-                spelling_delay = len(self.target) * 150 + 400
-                word_audio_delay = len(self.target) * 100 + 300
-                total_delay = spelling_delay + word_audio_delay
-                
-                QTimer.singleShot(spelling_delay, lambda: self.speaker.output(self.target))
-                QTimer.singleShot(total_delay, lambda: self.start_counting(wait_time))
-            else:
-                self.start_counting(wait_time)
+    def get_word_pronunciation(self):
+        """Get the pronunciation details for current word target."""
+        target = self.target
+        spelling = ", ".join(list(target))
+        
+        spelling_delay = len(target) * 150 + 400
+        word_audio_delay = len(target) * 100 + 300
+        total_delay = spelling_delay + word_audio_delay
+        wait_time = len(target) * 2000
+        
+        return {
+            "spelling": spelling,
+            "spelling_delay": spelling_delay,
+            "word_audio_delay": word_audio_delay,
+            "total_delay": total_delay,
+            "wait_time": wait_time
+        }
 
-    def start_counting(self, wait_time):
-        self.input_field.setEnabled(True)
-        self.input_field.setFocus()
-        winsound.Beep(1000, 150)
-        self.timer.start(wait_time)
+    def should_end_week_learning(self):
+        """Check if learning flow is complete."""
+        return self.week_learning_phase_idx >= len(self.get_current_week_learning_flow())
 
-    def check_input(self, text):
-        if not text: return
-        if text.upper() == self.target.upper():
-            self.timer.stop()
-            winsound.Beep(1500, 100)
-            self.log_data(self.target, "Correct")
-            self.score += 1
-            self.score_label.setText(f"Score: {self.score}")
-            self.next_round()
-        elif len(text) >= len(self.target):
-            winsound.Beep(400, 200)
-            self.log_data(self.target, "Error")
-            self.clear_input_field(self.input_field)
-            self.next_round()
 
-    def time_out(self):
-        winsound.Beep(600, 800) 
-        self.log_data(self.target, "Error")
-        self.next_round()
-
-    def stop_game(self):
-        self.timer.stop()
-        self.practice_minute_timer.stop()
-        self.pages.setCurrentIndex(3)
-
+# Entry Point
 if __name__ == "__main__":
+    from french import AppFrontend
+    
     app = QApplication(sys.argv)
-    win = TypingApp()
+    logic = AppBackend()
+    win = AppFrontend(logic)
     win.show()
     sys.exit(app.exec_())
