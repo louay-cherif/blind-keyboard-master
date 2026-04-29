@@ -1,3 +1,4 @@
+# the imports
 import winsound
 import time
 import os
@@ -8,7 +9,7 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 
 
 class AppFrontend(QWidget):
-    """GUI layer for the typing application. Handles all user interface elements."""
+    """GUI layer for the application. Handles all user interface elements."""
     
     def __init__(self, logic):
         super().__init__()
@@ -299,8 +300,8 @@ class AppFrontend(QWidget):
 
     def check_input(self, text):
         """Validate game input"""
-        result = self.logic.check_game_input(text, self.logic.target)
-        if result is None:
+            result = self.logic.check_game_input(text, self.logic.target)
+           if result is None:
             return
         
         if result["correct"]:
