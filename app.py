@@ -1,5 +1,4 @@
 # the imports
-
 import sys
 import random
 import winsound
@@ -9,6 +8,7 @@ import time
 import w1words
 import w2words
 import w3words
+from PyQt5.QtWidgets import QApplication
 
 try:
     from accessible_output2.outputs import auto
@@ -16,13 +16,13 @@ try:
 except ImportError:
     HAS_ACCESSIBLE = False
 
-from PyQt5.QtWidgets import QApplication
-
 
 class AppBackend:
     def __init__(self):
         self.speaker = auto.Auto() if HAS_ACCESSIBLE else None
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.data_dir = os.path.join(self.base_dir, "data")
+        os.makedirs(self.data_dir, exist_ok=True)
         
         # I am thinking about figuring out how to to get rid of this variable and instead call the week data from the week file, that will make the code easier to maintain. Now I'll leave it as it is and see it later
         self.weeks = [
@@ -44,6 +44,7 @@ class AppBackend:
             },
             {
                 "name": "Semaine 2: Ligne Supérieure",
+                
                 "steps": ["AZER", "TYU", "IOP", "AZERTYUIOP"],
                 "letters": "AZERTYUIOP",
                 "practice_letters": ["AZERTYUIOP", "AZERTYUIOPQSDFGHJKLM"],
@@ -113,7 +114,7 @@ class AppBackend:
     # returns a log file path with the file named using the cleaned username and current week index
     def get_user_csv_path(self):
         clean_name = self.get_clean_username()
-        return os.path.join(self.base_dir, f"{clean_name}_Week_{self.current_week_idx + 1}.csv")
+        return os.path.join(self.data_dir, f"{clean_name}_Week_{self.current_week_idx + 1}.csv")
 
     # returns the current week data dictionary
     def current_week(self):
@@ -353,6 +354,7 @@ class AppBackend:
     def should_end_week_learning(self):
         """Check if learning flow is complete."""
         return self.week_learning_phase_idx >= len(self.get_current_week_learning_flow())
+
 
 
 # Entry Point
