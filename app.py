@@ -107,6 +107,22 @@ class AppBackend:
         self.practice_letter_weights = {}
         self.last_letter_accuracy = {}
 
+    def reset(self):
+        """Reset all state variables to initial values"""
+        self.current_week_idx = 0
+        self.current_step_idx = 0
+        self.repetition_count = 0
+        self.in_random_phase = False
+        self.week_learning_phase_idx = 0
+        self.week_phase_start = None
+        self.mode = ""
+        self.target = ""
+        self.score = 0
+        self.user_name = ""
+        self.practice_round_counter = 0
+        self.practice_letter_weights = {}
+        self.last_letter_accuracy = {}
+
     # returns a cleaned version of the username for log file naming
     def get_clean_username(self):
         return "".join(c for c in self.user_name if c.isalnum() or c in (' ', '_')).rstrip()
