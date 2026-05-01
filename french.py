@@ -1,4 +1,3 @@
-# the imports
 import winsound
 import time
 import os
@@ -9,7 +8,7 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 
 
 class AppFrontend(QWidget):
-    """GUI layer for the application. Handles all user interface elements."""
+    """GUI layer for the typing application. Handles all user interface elements."""
     
     def __init__(self, logic):
         super().__init__()
@@ -67,6 +66,12 @@ class AppFrontend(QWidget):
         self.logic.current_week_idx = idx
         self.pages.setCurrentIndex(1)
 
+    def go_back_to_week_selection(self):
+        """Go back to week selection and reset everything"""
+        self.logic.reset()
+        self.name_input.clear()
+        self.pages.setCurrentIndex(0)
+
     def setup_identification_page(self):
         """Page 1: User identification and mode selection"""
         page = QWidget()
@@ -75,15 +80,15 @@ class AppFrontend(QWidget):
         self.name_input.setPlaceholderText("Entrez votre nom...")
         btn_learn = QPushButton("Apprendre")
         btn_practice = QPushButton("Pratique")
-        btn_back = QPushButton("Retour")
+        btn_retour = QPushButton("Retour")
         btn_learn.clicked.connect(self.start_learning)
         btn_practice.clicked.connect(self.start_practice)
-        btn_back.clicked.connect(lambda: self.pages.setCurrentIndex(0))
+        btn_retour.clicked.connect(self.go_back_to_week_selection)
         layout.addWidget(QLabel("IDENTIFICATION"))
         layout.addWidget(self.name_input)
         layout.addWidget(btn_learn)
         layout.addWidget(btn_practice)
-        layout.addWidget(btn_back)
+        layout.addWidget(btn_retour)
         page.setLayout(layout)
         self.pages.addWidget(page)
 
