@@ -114,7 +114,9 @@ class AppBackend:
     # returns a log file path with the file named using the cleaned username and current week index
     def get_user_csv_path(self):
         clean_name = self.get_clean_username()
-        return os.path.join(self.data_dir, f"{clean_name}_Week_{self.current_week_idx + 1}.csv")
+        user_dir = os.path.join(self.data_dir, clean_name)
+        os.makedirs(user_dir, exist_ok=True)
+        return os.path.join(user_dir, f"{clean_name}_Week_{self.current_week_idx + 1}.csv")
 
     # returns the current week data dictionary
     def current_week(self):
