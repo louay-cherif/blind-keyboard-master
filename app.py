@@ -1,13 +1,10 @@
-# the imports
 import sys
 import random
 import winsound
 import csv
 import os
 import time
-import w1words
-import w2words
-import w3words
+import importlib
 from PyQt5.QtWidgets import QApplication
 
 try:
@@ -24,71 +21,16 @@ class AppBackend:
         self.data_dir = os.path.join(self.base_dir, "data")
         os.makedirs(self.data_dir, exist_ok=True)
         
-        # I am thinking about figuring out how to to get rid of this variable and instead call the week data from the week file, that will make the code easier to maintain. Now I'll leave it as it is and see it later
         self.weeks = [
-            {
-                "name": "Semaine 1: Ligne de Base",
-                "steps": ["QSDF", "GHJ", "KLM", "QSDFGHJKLM"],
-                "practice_letters": ["QSDFGHJKLM"],
-                "words": getattr(w1words, "words", []),
-                "learning_flow": [
-                    {"mode": "learn", "chars": "QSDF"},
-                    {"mode": "random", "chars": "QSDF", "duration": 300},
-                    {"mode": "learn", "chars": "GHJ"},
-                    {"mode": "random", "chars": "GHJ", "count": 40},
-                    {"mode": "random", "chars": "QSDFGHJ", "duration": 300},
-                    {"mode": "learn", "chars": "KLM"},
-                    {"mode": "random", "chars": "KLM", "count": 40},
-                    {"mode": "random", "chars": "QSDFGHJKLM", "count": 250},
-                ],
-            },
-            {
-                "name": "Semaine 2: Ligne Supérieure",
-                
-                "steps": ["AZER", "TYU", "IOP", "AZERTYUIOP"],
-                "letters": "AZERTYUIOP",
-                "practice_letters": ["AZERTYUIOP", "AZERTYUIOPQSDFGHJKLM"],
-                "words": getattr(w2words, "words", []),
-                "learning_flow": [
-                    {"mode": "random", "chars": "QSDFGHJKLM", "duration": 300},
-                    {"mode": "learn", "chars": "AZER"},
-                    {"mode": "random", "chars": "AZER", "count": 20},
-                    {"mode": "learn", "chars": "TYU"},
-                    {"mode": "random", "chars": "TYU", "count": 20},
-                    {"mode": "learn", "chars": "IOP"},
-                    {"mode": "random", "chars": "IOP", "count": 20},
-                    {"mode": "random", "chars": "AZERTYUIOP", "count": 40},
-                    {"mode": "random", "chars": "AZERTYUIOPQSDFGHJKLM", "count": 60},
-                ],
-            },
-            {
-                "name": "Semaine 3: Ligne Inférieure",
-                "steps": ["WXC", "VBN", "WXCVBN"],
-                "letters": "WXCVBN",
-                "practice_letters": ["WXCVBN", "AZERTYUIOPQSDFGHJKLMWXCVBN"],
-                "words": getattr(w3words, "words", []),
-                "learning_flow": [
-                    {"mode": "random", "chars": "QSDFGHJKLM", "duration": 300},
-                    {"mode": "random", "chars": "AZERTYUIOP", "duration": 300},
-                    {"mode": "random", "chars": "AZERTYUIOPQSDFGHJKLM", "count": 100},
-                    {"mode": "learn", "chars": "WXC"},
-                    {"mode": "random", "chars": "WXC", "count": 20},
-                    {"mode": "random", "chars": "AZERTYUIOPWXC", "duration": 180},
-                    {"mode": "learn", "chars": "VBN"},
-                    {"mode": "random", "chars": "VBN", "duration": 120},
-                    {"mode": "random", "chars": "WXCVBN", "duration": 180},
-                    {"mode": "random", "chars": "AZERTYUIOPQSDFGHJKLMWXCVBN", "duration": 600},
-                ],
-            },
-            {
-                "name": "Semaine 4: Mixage des Lignes",
-                "steps": ["QSDFGHJKLM", "AZERTYUIOP", "WXCVBN", "AZERTYUIOPQSDFGHJKLMWXCVBN"],
-            },
-            {
-                "name": "Semaine 5: Majuscules et Symboles",
-                "steps": ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", ",;:!?", "./§", "ALL_COMBINED"],
-            },
+            {"name": "Semaine 1: Ligne de Base"},
+            {"name": "Semaine 2: Ligne Supérieure"},
+            {"name": "Semaine 3: Ligne Inférieure"},
+            {"name": "Semaine 4: Mixage des Lignes"},
+            {"name": "Semaine 5: Majuscules et Symboles"},
         ]
+        self.current_week_config = None
+        self.current_week_words = None
+        self.loaded_week_idx = None
         
         self.current_week_idx = 0
         self.current_step_idx = 0
@@ -122,6 +64,10 @@ class AppBackend:
         self.practice_round_counter = 0
         self.practice_letter_weights = {}
         self.last_letter_accuracy = {}
+        self.current_week_config = None
+        self.current_week_words = None
+        self.loaded_week_idx = None
+
 
     # returns a cleaned version of the username for log file naming
     def get_clean_username(self):
@@ -134,9 +80,30 @@ class AppBackend:
         os.makedirs(user_dir, exist_ok=True)
         return os.path.join(user_dir, f"{clean_name}_Week_{self.current_week_idx + 1}.csv")
 
-    # returns the current week data dictionary
+    # load and return the current week config and words
+    def get_current_week_data(self):
+        if self.loaded_week_idx == self.current_week_idx and self.current_week_config is not None and self.current_week_words is not None:
+            return self.current_week_config, self.current_week_words
+
+        try:
+            module = importlib.import_module("weeks")
+        except ImportError:
+            self.current_week_config = {}
+            self.current_week_words = []
+            return self.current_week_config, self.current_week_words
+
+        week_attr = f"week{self.current_week_idx + 1}"
+        words_attr = f"w{self.current_week_idx + 1}words"
+        week_config = getattr(module, week_attr, None) or {}
+        week_words = getattr(module, words_attr, [])
+
+        self.current_week_config = dict(week_config)
+        self.current_week_words = list(week_words)
+        self.loaded_week_idx = self.current_week_idx
+        return self.current_week_config, self.current_week_words
+
     def current_week(self):
-        return self.weeks[self.current_week_idx]
+        return self.get_current_week_data()[0]
 
     # returns the steps for the current week, or an empty list if not defined
     def get_current_week_steps(self):
@@ -156,7 +123,7 @@ class AppBackend:
         return ''.join(sorted(letters))
 
     def get_current_week_words(self):
-        return self.current_week().get("words", [])
+        return self.get_current_week_data()[1]
 
     def get_current_week_practice_letters(self):
         practice_letters = self.current_week().get("practice_letters", [])
