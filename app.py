@@ -6,6 +6,7 @@ import os
 import time
 import importlib
 from PyQt5.QtWidgets import QApplication
+from weeks import Week4Logic
 
 try:
     from accessible_output2.outputs import auto
