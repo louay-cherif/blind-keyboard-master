@@ -14,6 +14,7 @@ class AppFrontend(QWidget):
     def __init__(self, logic):
         super().__init__()
         self.logic = logic  # Reference to AppBackend instance
+        self._base_logic = logic  # Keep original logic reference for Week4Logic initialization
         
         self.setWindowTitle("Adapted Informatics Initiative Official Keyboard typing app for visually impaired people")
         self.resize(800, 600)
@@ -76,6 +77,7 @@ class AppFrontend(QWidget):
 
     def go_back_to_week_selection(self):
         """Go back to week selection and reset everything"""
+        self.logic = self._base_logic  # Reset to original logic
         self.logic.reset()
         self.name_input.clear()
         self.pages.setCurrentIndex(0)
@@ -400,7 +402,7 @@ class AppFrontend(QWidget):
             return
         
         # Initialize Week4Logic
-        self.logic = Week4Logic(self.logic)
+        self.logic = Week4Logic(self._base_logic)
         self.logic.user_name = username
         self.logic.mode_start_time = time.time()
         
@@ -579,6 +581,7 @@ class AppFrontend(QWidget):
     def stop_week4_game(self):
         """Stop Week 4 game and return to week selection"""
         self.w4_timer.stop()
+        self.logic = self._base_logic  # Reset to original logic
         self.logic.reset()
         self.pages.setCurrentIndex(0)
 
@@ -607,5 +610,6 @@ class AppFrontend(QWidget):
 
     def week4_end_ok(self):
         """OK button on Week 4 end screen"""
+        self.logic = self._base_logic  # Reset to original logic
         self.logic.reset()
         self.pages.setCurrentIndex(0)
