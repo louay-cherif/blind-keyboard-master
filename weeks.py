@@ -216,14 +216,29 @@ class LetterStatus:
         self.timeout_count = 0
     
     def update_status(self):
-        """Mark as mastered if criteria met."""
-        if self.time <= 1.33:
-            if len(self.recent_results) >= 10:
-                error_rate = (len(self.recent_results) - sum(self.recent_results)) / len(self.recent_results)
-                if error_rate < 0.15:
-                    self.status = "mastered"
-                    return True
-        return False
+        """Mark as mastered if criteria met: time ≤ 1.33s AND error_rate < 15% AND timeout_rate < 10%"""
+        if len(self.recent_results) < 20:
+            return False
+        
+        # Criterion 1: Time must be ≤ 1.33s
+        if self.time > 1.33:
+            return False
+        
+        # Criterion 2: Error rate < 15% (at most 2-3 errors in 20 attempts)
+        error_count = len(self.recent_results) - sum(self.recent_results)
+        error_rate = error_count / len(self.recent_results)
+        if error_rate >= 0.15:
+            return False
+        
+        # Criterion 3: Timeout rate < 10% (at most 1-2 timeouts in 20 attempts)
+        timeout_rate = self.timeout_count / len(self.recent_results)
+        if timeout_rate >= 0.1:
+            return False
+        
+        # All criteria met
+        self.status = "mastered"
+        return True
+
 
 
 class Week4Logic:
@@ -252,6 +267,7 @@ class Week4Logic:
         self.mode_start_time = None
         self.current_couple = []
         self.last_attempt_status = None  # Track last attempt: "correct", "error", "timeout"
+        self.newly_mastered_letters = []  # Track letters that just became mastered
         
         # Phase tracking
         self.phases = [
@@ -405,13 +421,15 @@ class Week4Logic:
         """
         Record attempt and update letter status.
         status_type: "correct", "error", or "timeout"
+        Returns: list of newly mastered letters (if any)
         """
         phase = self.get_current_phase()
         if not phase:
-            return
+            return []
         
         mode = phase["mode"]
         is_correct = (status_type == "correct")
+        newly_mastered = []
         
         # Log to CSV with distinct status
         self.log_data(target, mode, status_type, offered_time)
@@ -435,7 +453,8 @@ class Week4Logic:
                 if status_obj.status == "unmastered":
                     if len(status_obj.recent_results) >= 20:
                         status_obj.update_time()
-                        status_obj.update_status()
+                        if status_obj.update_status():  # Returns True if just became mastered
+                            newly_mastered.append(letter)
                         status_obj.reset_counters()
         else:
             # Error or timeout: record negative result
@@ -450,8 +469,13 @@ class Week4Logic:
             elif target in self.letters_pool:
                 self.letters_pool[target].add_result(False)
         
+        # Store newly mastered letters for UI display
+        self.newly_mastered_letters = newly_mastered
+        
         # Always move to next round
         self.phase_item_count += 1
+        
+        return newly_mastered
     
     def is_all_mastered(self):
         """Check if all letters are mastered."""
