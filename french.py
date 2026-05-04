@@ -463,26 +463,68 @@ class AppFrontend(QWidget):
         self.w4_phase_label.setText(phase["name"] if phase else "")
         
         display_time = self.logic.get_target_display_time()
+        self.w4_target_label.setText(target)
         
-        # Handle COUPLE mode display: "EG" displayed, "E, G" spoken
-        if phase and phase["mode"] == "COUPLE":
-            display_text = target
-            speak_text = ", ".join(list(target))
+        # Handle WORDS and COUPLE modes: spell letters, wait, speak as word, then enable input
+        # COUPLE mode treated as a "word" for pronunciation (e.g., "EG" spelled as "E, G" then spoken "EG")
+        if phase and phase["mode"] in ["WORDS", "COUPLE"]:
+            if self.logic.speaker:
+                self.w4_input_field.setEnabled(False)
+                pronun = self.logic.get_word_pronunciation()
+                self.logic.speaker.output(pronun["spelling"])  # Spell: "E, G" or "C, H, A, T"
+                QTimer.singleShot(pronun["spelling_delay"], 
+                                lambda: self.logic.speaker.output(self.logic.target))  # Speak: "EG" or "CHAT"
+                QTimer.singleShot(pronun["total_delay"], 
+                                lambda: self.w4_start_input())
+            else:
+                wait_time = len(self.logic.target) * 2000
+                self.w4_start_input_with_delay(wait_time)
         else:
-            display_text = target
-            speak_text = target
-        
-        self.w4_target_label.setText(display_text)
-        if self.logic.speaker:
-            self.logic.speaker.output(speak_text)
-        
+            # STANDARD, STANDARD_ADAPTIVE, SPEED modes: input enabled immediately
+            if self.logic.speaker:
+                self.logic.speaker.output(target)
+            self.w4_input_field.setEnabled(True)
+            self.w4_input_field.setFocus()
+            self.w4_round_start_time = time.time()
+            self.w4_timer.start(int(display_time * 1000))
+
+    def w4_start_input(self):
+        """Enable input for WORDS mode after pronunciation delay (inherits from start_counting pattern)"""
         self.w4_input_field.setEnabled(True)
         self.w4_input_field.setFocus()
         self.w4_round_start_time = time.time()
-        
-        # Start timer (convert seconds to milliseconds)
+        display_time = self.logic.get_target_display_time()
+        winsound.Beep(1000, 150)
         self.w4_timer.start(int(display_time * 1000))
 
+    def w4_start_input_with_delay(self, wait_time):
+        """Enable input with delay when speaker not available (inherits from start_counting pattern)"""
+        self.w4_input_field.setEnabled(True)
+        self.w4_input_field.setFocus()
+        self.w4_round_start_time = time.time()
+        winsound.Beep(1000, 150)
+        self.w4_timer.start(wait_time)
+    def show_week4_mastery_notification(self, newly_mastered_letters):
+        """Show mastery notification when letter(s) become mastered"""
+        # Create mastery message: "D est maitrisée, E est maitrisée, ..."
+        mastery_messages = [f"{letter} est maitrisée" for letter in newly_mastered_letters]
+        full_message = " ".join(mastery_messages)
+        
+        # Disable input during notification
+        self.w4_input_field.setEnabled(False)
+        
+        # Display message
+        self.w4_target_label.setText(full_message)
+        
+        # Speak notification
+        if self.logic.speaker:
+            self.logic.speaker.output(full_message)
+            # After speaking, wait a bit then show next round
+            speak_duration = len(full_message) * 100 + 500  # Approximate duration
+            QTimer.singleShot(speak_duration, lambda: self.week4_next_round())
+        else:
+            # If no speaker, just wait and proceed
+            QTimer.singleShot(1500, lambda: self.week4_next_round())
     def check_week4_input(self, text):
         """Validate Week 4 input"""
         if not text:
@@ -496,19 +538,29 @@ class AppFrontend(QWidget):
             
             # Record correct attempt
             elapsed = time.time() - self.w4_round_start_time if self.w4_round_start_time else 0
-            self.logic.record_attempt(self.logic.target, "correct", elapsed)
+            newly_mastered = self.logic.record_attempt(self.logic.target, "correct", elapsed)
             
             self.logic.score += 1
-            self.week4_next_round()
+            
+            # Show mastery notification if any letters just became mastered
+            if newly_mastered:
+                self.show_week4_mastery_notification(newly_mastered)
+            else:
+                self.week4_next_round()
         elif len(text) >= len(self.logic.target):
             winsound.Beep(400, 200)
             
             # Record error
             elapsed = time.time() - self.w4_round_start_time if self.w4_round_start_time else 0
-            self.logic.record_attempt(self.logic.target, "error", elapsed)
+            newly_mastered = self.logic.record_attempt(self.logic.target, "error", elapsed)
             
             self.clear_input_field(self.w4_input_field)
-            self.week4_next_round()
+            
+            # Show mastery notification if any letters just became mastered
+            if newly_mastered:
+                self.show_week4_mastery_notification(newly_mastered)
+            else:
+                self.week4_next_round()
 
     def week4_time_out(self):
         """Handle timeout in Week 4"""
@@ -516,9 +568,13 @@ class AppFrontend(QWidget):
         
         # Record timeout
         elapsed = time.time() - self.w4_round_start_time if self.w4_round_start_time else 0
-        self.logic.record_attempt(self.logic.target, "timeout", elapsed)
+        newly_mastered = self.logic.record_attempt(self.logic.target, "timeout", elapsed)
         
-        self.week4_next_round()
+        # Show mastery notification if any letters just became mastered
+        if newly_mastered:
+            self.show_week4_mastery_notification(newly_mastered)
+        else:
+            self.week4_next_round()
 
     def stop_week4_game(self):
         """Stop Week 4 game and return to week selection"""
