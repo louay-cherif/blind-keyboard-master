@@ -453,7 +453,34 @@ class AppFrontend(QWidget):
         
         # Check if should advance phase
         if self.logic.should_advance_phase():
+            old_phase_name = self.logic.get_current_phase()['name'] if self.logic.get_current_phase() else ""
             self.logic.advance_phase()
+            new_phase = self.logic.get_current_phase()
+            if new_phase:
+                # Announce mode switch and disable input
+                self.w4_input_field.setEnabled(False)
+                mode_announcement = f"{new_phase['name']}"
+                if self.logic.speaker:
+                    self.logic.speaker.output(mode_announcement)
+                # Wait for announcement, then continue
+                announcement_duration = len(mode_announcement) * 100 + 500
+                QTimer.singleShot(announcement_duration, lambda: self.week4_continue_round_after_phase_switch())
+                return
+        
+        # Get current phase
+        phase = self.logic.get_current_phase()
+        
+        # Handle PAUSE mode
+        if phase and phase["mode"] == "PAUSE":
+            self.w4_input_field.setEnabled(False)
+            self.w4_target_label.setText(f"PAUSE\n{phase['duration']} secondes")
+            self.w4_phase_label.setText("Reposez-vous...")
+            if self.logic.speaker:
+                self.logic.speaker.output(f"PAUSE de {phase['duration']} secondes. Reposez-vous.")
+            # Wait for pause duration then advance
+            pause_duration = int(phase['duration'] * 1000)
+            QTimer.singleShot(pause_duration, lambda: self.week4_advance_past_pause())
+            return
         
         # Generate next target
         target = self.logic.generate_target()
@@ -461,7 +488,6 @@ class AppFrontend(QWidget):
             self.pages.setCurrentIndex(7)  # End page
             return
         
-        phase = self.logic.get_current_phase()
         self.w4_phase_label.setText(phase["name"] if phase else "")
         
         display_time = self.logic.get_target_display_time()
@@ -506,6 +532,62 @@ class AppFrontend(QWidget):
         self.w4_round_start_time = time.time()
         winsound.Beep(1000, 150)
         self.w4_timer.start(wait_time)
+
+    def week4_continue_round_after_phase_switch(self):
+        """Continue round after phase switch announcement"""
+        # Get current phase first to check for PAUSE mode
+        phase = self.logic.get_current_phase()
+        
+        # Handle PAUSE mode (if phase switch led into a PAUSE)
+        if phase and phase["mode"] == "PAUSE":
+            self.w4_input_field.setEnabled(False)
+            self.w4_target_label.setText(f"PAUSE\n{phase['duration']} secondes")
+            self.w4_phase_label.setText("Reposez-vous...")
+            if self.logic.speaker:
+                self.logic.speaker.output(f"PAUSE de {phase['duration']} secondes. Reposez-vous.")
+            # Wait for pause duration then advance
+            pause_duration = int(phase['duration'] * 1000)
+            QTimer.singleShot(pause_duration, lambda: self.week4_advance_past_pause())
+            return
+        
+        # Generate next target
+        target = self.logic.generate_target()
+        if target is None:
+            self.pages.setCurrentIndex(7)  # End page
+            return
+        
+        self.w4_phase_label.setText(phase["name"] if phase else "")
+        
+        display_time = self.logic.get_target_display_time()
+        self.w4_target_label.setText(target)
+        
+        # Handle WORDS and COUPLE modes: spell letters, wait, speak as word, then enable input
+        if phase and phase["mode"] in ["WORDS", "COUPLE"]:
+            if self.logic.speaker:
+                self.w4_input_field.setEnabled(False)
+                pronun = self.logic.get_word_pronunciation()
+                self.logic.speaker.output(pronun["spelling"])
+                QTimer.singleShot(pronun["spelling_delay"], 
+                                lambda: self.logic.speaker.output(self.logic.target))
+                QTimer.singleShot(pronun["total_delay"], 
+                                lambda: self.w4_start_input())
+            else:
+                wait_time = len(self.logic.target) * 2000
+                self.w4_start_input_with_delay(wait_time)
+        else:
+            # STANDARD, STANDARD_ADAPTIVE, SPEED modes: input enabled immediately
+            if self.logic.speaker:
+                self.logic.speaker.output(target)
+            self.w4_input_field.setEnabled(True)
+            self.w4_input_field.setFocus()
+            self.w4_round_start_time = time.time()
+            self.w4_timer.start(int(display_time * 1000))
+
+    def week4_advance_past_pause(self):
+        """Advance past pause and continue with next phase"""
+        self.logic.advance_phase()
+        self.week4_next_round()
+
     def show_week4_mastery_notification(self, newly_mastered_letters):
         """Show mastery notification when letter(s) become mastered"""
         # Create mastery message: "D est maitrisée, E est maitrisée, ..."
@@ -539,8 +621,9 @@ class AppFrontend(QWidget):
             winsound.Beep(1500, 100)
             
             # Record correct attempt
-            elapsed = time.time() - self.w4_round_start_time if self.w4_round_start_time else 0
-            newly_mastered = self.logic.record_attempt(self.logic.target, "correct", elapsed)
+            # Use the offered time (display time) instead of actual elapsed time
+            offered_time = self.logic.get_target_display_time()
+            newly_mastered = self.logic.record_attempt(self.logic.target, "correct", offered_time)
             
             self.logic.score += 1
             
@@ -553,8 +636,9 @@ class AppFrontend(QWidget):
             winsound.Beep(400, 200)
             
             # Record error
-            elapsed = time.time() - self.w4_round_start_time if self.w4_round_start_time else 0
-            newly_mastered = self.logic.record_attempt(self.logic.target, "error", elapsed)
+            # Use the offered time (display time) instead of actual elapsed time
+            offered_time = self.logic.get_target_display_time()
+            newly_mastered = self.logic.record_attempt(self.logic.target, "error", offered_time)
             
             self.clear_input_field(self.w4_input_field)
             
@@ -569,8 +653,9 @@ class AppFrontend(QWidget):
         winsound.Beep(600, 800)
         
         # Record timeout
-        elapsed = time.time() - self.w4_round_start_time if self.w4_round_start_time else 0
-        newly_mastered = self.logic.record_attempt(self.logic.target, "timeout", elapsed)
+        # Use the offered time (display time) instead of actual elapsed time
+        offered_time = self.logic.get_target_display_time()
+        newly_mastered = self.logic.record_attempt(self.logic.target, "timeout", offered_time)
         
         # Show mastery notification if any letters just became mastered
         if newly_mastered:

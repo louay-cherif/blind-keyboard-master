@@ -273,9 +273,11 @@ class Week4Logic:
         self.phases = [
             {"mode": "STANDARD", "duration": 300, "name": "Phase 1: STANDARD"},
             {"mode": "STANDARD_ADAPTIVE", "duration": None, "name": "Phase 2: STANDARD Adaptive"},
+            {"mode": "PAUSE", "duration": 60, "name": "PAUSE - 1 minute break"},
             {"mode": "COUPLE", "duration": 180, "name": "Phase 3: COUPLE"},
             {"mode": "STANDARD", "duration": 600, "name": "Phase 4: STANDARD"},
             {"mode": "WORDS", "duration": None, "count": 50, "name": "Phase 5: WORDS"},
+            {"mode": "PAUSE", "duration": 60, "name": "PAUSE - 1 minute break"},
             {"mode": "STANDARD", "duration": 300, "name": "Phase 6: STANDARD"},
             {"mode": "COUPLE", "duration": None, "count": 20, "name": "Phase 7: COUPLE"},
             {"mode": "STANDARD_MASTERY", "duration": None, "name": "Phase 8: STANDARD (Mastery)"},
@@ -310,7 +312,9 @@ class Week4Logic:
                 writer = csv.writer(f)
                 if not file_exists:
                     writer.writerow(["mode", "target", "status", "offered_time"])
-                writer.writerow([phase_mode, target, status, offered_time])
+                # Round offered_time to 2 decimal places
+                rounded_time = round(offered_time, 2)
+                writer.writerow([phase_mode, target, status, rounded_time])
         except:
             pass
     
@@ -337,12 +341,18 @@ class Week4Logic:
         
         mode = phase["mode"]
         
-        # STANDARD (Phases 0, 3, 5): Random letters with no restrictions or adaptive filtering
+        # STANDARD (Phases 0, 3, 5): Random letters - exclude mastered letters starting from phase 3
         if mode == "STANDARD":
-            # All letters available (no mastery check)
-            all_letters = list(self.letters_pool.keys())
-            if all_letters:
-                self.target = random.choice(all_letters)
+            # In early phases (0), show all letters; in later phases (3, 5), exclude mastered
+            if self.current_phase_idx >= 3:
+                # Exclude mastered letters in later STANDARD phases
+                available = [l for l, s in self.letters_pool.items() if s.status != "mastered"]
+            else:
+                # Phase 0: show all letters
+                available = list(self.letters_pool.keys())
+            
+            if available:
+                self.target = random.choice(available)
                 return self.target
             return None
         
@@ -374,6 +384,10 @@ class Week4Logic:
             weights = [self.letters_pool[l].time for l in unmastered]
             self.target = random.choices(unmastered, weights=weights, k=1)[0]
             return self.target
+        
+        # PAUSE mode: No target during pause
+        elif mode == "PAUSE":
+            return None
         
         # COUPLE (Phases 2, 6): Two-letter combinations (practice, no mastery)
         elif mode == "COUPLE":
@@ -523,6 +537,13 @@ class Week4Logic:
             return False
         
         mode = phase.get("mode")
+        
+        # PAUSE mode: Advance after duration
+        if mode == "PAUSE":
+            if self.mode_start_time:
+                elapsed = time.time() - self.mode_start_time
+                if elapsed >= phase["duration"]:
+                    return True
         
         # STANDARD_ADAPTIVE (Phase 1): Advance when all letters have appeared 20+ times (cumulative)
         if mode == "STANDARD_ADAPTIVE":
