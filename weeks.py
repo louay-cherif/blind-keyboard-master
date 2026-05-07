@@ -179,66 +179,66 @@ class LetterStatus:
         self.last_time = 2.0
         self.status = "unmastered"
         self.appearance_count = 0
+        self.total_appearance_count = 0  # Cumulative, never resets - for phase advancement
         self.recent_results = []  # Track last 20 results: True (correct), False (error/timeout)
         self.correct_count = 0
+        self.error_count = 0
         self.timeout_count = 0
         self.adaptation_phase_started = False
     
-    def add_result(self, is_correct):
+    def add_result(self, status):
         """Add result to recent tracking."""
-        self.recent_results.append(is_correct)
-        if is_correct:
+        self.recent_results.append(status)
+        
+        # Increment cumulative counter (never resets)
+        self.total_appearance_count += 1
+        
+        # Count types
+        if status == "correct":
             self.correct_count += 1
-        else:
+        elif status == "error":
+            self.error_count += 1
+        elif status == "timeout":
             self.timeout_count += 1
+        
         self.appearance_count += 1
+        # Increment cumulative counter (never resets)
+        # Note: this attribute set in LetterStatus.__init__ in parent Week4Logic
         
         # Keep only last 20
         if len(self.recent_results) > 20:
             self.recent_results.pop(0)
     
     def update_time(self):
-        """Update time based on performance."""
         if len(self.recent_results) < 20:
             return
-        
-        timeout_rate = self.timeout_count / len(self.recent_results) if self.recent_results else 0
-        
+        timeout_rate = self.timeout_count / len(self.recent_results)
         if timeout_rate < 0.1:
             self.last_time = self.time
-            self.time = max(1.0, self.time - 0.33)
-    
+            self.time = max(1.0, self.time - 0.33)    
+
     def reset_counters(self):
         """Reset counters after 20 appearances."""
         self.appearance_count = 0
         self.recent_results = []
         self.correct_count = 0
+        self.error_count = 0
         self.timeout_count = 0
+        # NOTE: total_appearance_count never resets - used for phase advancement tracking
     
     def update_status(self):
-        """Mark as mastered if criteria met: time ≤ 1.33s AND error_rate < 15% AND timeout_rate < 10%"""
         if len(self.recent_results) < 20:
             return False
-        
-        # Criterion 1: Time must be ≤ 1.33s
         if self.time > 1.33:
             return False
-        
-        # Criterion 2: Error rate < 15% (at most 2-3 errors in 20 attempts)
-        error_count = len(self.recent_results) - sum(self.recent_results)
-        error_rate = error_count / len(self.recent_results)
-        if error_rate >= 0.15:
+        error_rate = self.error_count / len(self.recent_results)
+        if error_rate > 0.10:
             return False
-        
-        # Criterion 3: Timeout rate < 10% (at most 1-2 timeouts in 20 attempts)
         timeout_rate = self.timeout_count / len(self.recent_results)
-        if timeout_rate >= 0.1:
+        if timeout_rate > 0.1:
             return False
-        
-        # All criteria met
         self.status = "mastered"
         return True
-
 
 
 class Week4Logic:
@@ -273,9 +273,11 @@ class Week4Logic:
         self.phases = [
             {"mode": "STANDARD", "duration": 300, "name": "Phase 1: STANDARD"},
             {"mode": "STANDARD_ADAPTIVE", "duration": None, "name": "Phase 2: STANDARD Adaptive"},
+            {"mode": "PAUSE", "duration": 60, "name": "PAUSE - 1 minute break"},
             {"mode": "COUPLE", "duration": 180, "name": "Phase 3: COUPLE"},
             {"mode": "STANDARD", "duration": 600, "name": "Phase 4: STANDARD"},
             {"mode": "WORDS", "duration": None, "count": 50, "name": "Phase 5: WORDS"},
+            {"mode": "PAUSE", "duration": 60, "name": "PAUSE - 1 minute break"},
             {"mode": "STANDARD", "duration": 300, "name": "Phase 6: STANDARD"},
             {"mode": "COUPLE", "duration": None, "count": 20, "name": "Phase 7: COUPLE"},
             {"mode": "STANDARD_MASTERY", "duration": None, "name": "Phase 8: STANDARD (Mastery)"},
@@ -297,7 +299,7 @@ class Week4Logic:
         os.makedirs(user_dir, exist_ok=True)
         return os.path.join(user_dir, f"{clean_name}_Week_4.csv")
     
-    def log_data(self, target, mode, status, offered_time):
+    def log_data(self, target, phase_mode, status, offered_time):
         """Override CSV logging for Week 4 format."""
         if not self.user_name:
             return
@@ -310,7 +312,9 @@ class Week4Logic:
                 writer = csv.writer(f)
                 if not file_exists:
                     writer.writerow(["mode", "target", "status", "offered_time"])
-                writer.writerow([mode, target, status, offered_time])
+                # Round offered_time to 2 decimal places
+                rounded_time = round(offered_time, 2)
+                writer.writerow([phase_mode, target, status, rounded_time])
         except:
             pass
     
@@ -325,7 +329,7 @@ class Week4Logic:
         self.current_phase_idx += 1
         self.phase_item_count = 0
         self.mode_start_time = time.time()
-        if self.current_phase_idx == 2:
+        if self.current_phase_idx == 1:
             self.adaptation_timer_start = time.time()
             self.adaptation_phase_started = True
     
@@ -337,33 +341,68 @@ class Week4Logic:
         
         mode = phase["mode"]
         
-        if mode == "STANDARD" or mode == "STANDARD_ADAPTIVE" or mode == "STANDARD_MASTERY":
-            unmastered = [l for l, s in self.letters_pool.items() if s.status == "unmastered"]
-            if not unmastered:
-                self.advance_phase()
-                return self.generate_target()
-            
-            if mode == "STANDARD_ADAPTIVE":
-                # Weight by performance (higher time = needs more practice)
-                weights = [self.letters_pool[l].time for l in unmastered]
-                target = random.choices(unmastered, weights=weights, k=1)[0]
+        # STANDARD (Phases 0, 3, 5): Random letters - exclude mastered letters starting from phase 3
+        if mode == "STANDARD":
+            # In early phases (0), show all letters; in later phases (3, 5), exclude mastered
+            if self.current_phase_idx >= 3:
+                # Exclude mastered letters in later STANDARD phases
+                available = [l for l, s in self.letters_pool.items() if s.status != "mastered"]
             else:
-                target = random.choice(unmastered)
+                # Phase 0: show all letters
+                available = list(self.letters_pool.keys())
             
-            self.target = target
-            return target
+            if available:
+                self.target = random.choice(available)
+                return self.target
+            return None
         
-        elif mode == "COUPLE":
-            unmastered = [l for l, s in self.letters_pool.items() if s.status == "unmastered"]
-            if len(unmastered) < 2:
+        # STANDARD_ADAPTIVE (Phase 1): Letters disappear after 20 appearances
+        elif mode == "STANDARD_ADAPTIVE":
+            # Only show letters that haven't had 20+ appearances yet (cumulative counter)
+            available = [l for l, s in self.letters_pool.items() if s.total_appearance_count < 20]
+            
+            if not available:
+                # All letters have 20 appearances, move to next phase
                 self.advance_phase()
                 return self.generate_target()
             
-            couple = random.sample(unmastered, 2)
+            # Weight by time (letters with longer time need more practice)
+            weights = [self.letters_pool[l].time for l in available]
+            self.target = random.choices(available, weights=weights, k=1)[0]
+            return self.target
+        
+        # STANDARD_MASTERY (Phase 7): Letters stay until mastered
+        elif mode == "STANDARD_MASTERY":
+            unmastered = [l for l, s in self.letters_pool.items() if s.status == "unmastered"]
+            
+            if not unmastered:
+                # All letters mastered
+                self.advance_phase()
+                return self.generate_target()
+            
+            # Weight by time (longer time = needs more practice)
+            weights = [self.letters_pool[l].time for l in unmastered]
+            self.target = random.choices(unmastered, weights=weights, k=1)[0]
+            return self.target
+        
+        # PAUSE mode: No target during pause
+        elif mode == "PAUSE":
+            return None
+        
+        # COUPLE (Phases 2, 6): Two-letter combinations (practice, no mastery)
+        elif mode == "COUPLE":
+            # Use all letters, not just unmastered (COUPLE is practice)
+            all_letters = list(self.letters_pool.keys())
+            if len(all_letters) < 2:
+                self.advance_phase()
+                return self.generate_target()
+            
+            couple = random.sample(all_letters, 2)
             self.target = "".join(couple)
             self.current_couple = couple
             return self.target
         
+        # WORDS (Phase 4): Real word typing (practice, no mastery)
         elif mode == "WORDS":
             words = w3words
             if not words:
@@ -373,14 +412,14 @@ class Week4Logic:
             self.target = random.choice(words).upper()
             return self.target
         
+        # SPEED (Phase 8): All letters at fixed 1.0s time
         elif mode == "SPEED":
-            unmastered = [l for l, s in self.letters_pool.items() if s.status == "unmastered"]
-            if not unmastered:
-                self.advance_phase()
-                return self.generate_target()
-            
-            self.target = random.choice(unmastered)
-            return self.target
+            # ALL letters, regardless of mastery
+            all_letters = list(self.letters_pool.keys())
+            if all_letters:
+                self.target = random.choice(all_letters)
+                return self.target
+            return None
         
         return None
     
@@ -428,49 +467,59 @@ class Week4Logic:
             return []
         
         mode = phase["mode"]
-        is_correct = (status_type == "correct")
         newly_mastered = []
         
         # Log to CSV with distinct status
         self.log_data(target, mode, status_type, offered_time)
         self.last_attempt_status = status_type
         
-        # Update letter status only if correct; any error/timeout moves to next
-        if is_correct:
+        # COUPLE and WORDS modes: Track results but DO NOT update mastery status
+        # They are practice modes only
+        if mode in ["COUPLE", "WORDS"]:
             if mode == "COUPLE":
                 for letter in self.current_couple:
                     if letter in self.letters_pool:
-                        self.letters_pool[letter].add_result(True)
+                        if status_type == "correct":
+                            self.letters_pool[letter].add_result("correct")
+                        else:
+                            self.letters_pool[letter].add_result(status_type)
             elif mode == "WORDS":
                 for letter in target:
                     if letter in self.letters_pool:
-                        self.letters_pool[letter].add_result(True)
-            elif target in self.letters_pool:
-                self.letters_pool[target].add_result(True)
-            
-            # Check for mastery after correct attempt
-            for letter, status_obj in self.letters_pool.items():
-                if status_obj.status == "unmastered":
+                        if status_type == "correct":
+                            self.letters_pool[letter].add_result("correct")
+                        else:
+                            self.letters_pool[letter].add_result(status_type)
+            # NO mastery check for COUPLE/WORDS - they never update mastery status
+            self.newly_mastered_letters = []
+        else:
+            # STANDARD modes (0, 1, 5, 7) and SPEED: Track and check for mastery
+            if status_type == "correct":
+                if target in self.letters_pool:
+                    self.letters_pool[target].add_result("correct")
+                    
+                    # Check for mastery if 20 appearances reached
+                    status_obj = self.letters_pool[target]
                     if len(status_obj.recent_results) >= 20:
                         status_obj.update_time()
                         if status_obj.update_status():  # Returns True if just became mastered
-                            newly_mastered.append(letter)
+                            newly_mastered.append(target)
                         status_obj.reset_counters()
-        else:
-            # Error or timeout: record negative result
-            if mode == "COUPLE":
-                for letter in self.current_couple:
-                    if letter in self.letters_pool:
-                        self.letters_pool[letter].add_result(False)
-            elif mode == "WORDS":
-                for letter in target:
-                    if letter in self.letters_pool:
-                        self.letters_pool[letter].add_result(False)
-            elif target in self.letters_pool:
-                self.letters_pool[target].add_result(False)
-        
-        # Store newly mastered letters for UI display
-        self.newly_mastered_letters = newly_mastered
+            else:
+                # error/timeout: record negative result
+                if target in self.letters_pool:
+                    self.letters_pool[target].add_result(status_type)
+                    
+                    # Check for mastery if 20 appearances reached
+                    status_obj = self.letters_pool[target]
+                    if len(status_obj.recent_results) >= 20:
+                        status_obj.update_time()
+                        if status_obj.update_status():
+                            newly_mastered.append(target)
+                        status_obj.reset_counters()
+            
+            # Store newly mastered letters for UI display
+            self.newly_mastered_letters = newly_mastered
         
         # Always move to next round
         self.phase_item_count += 1
@@ -487,12 +536,34 @@ class Week4Logic:
         if not phase:
             return False
         
+        mode = phase.get("mode")
+        
+        # PAUSE mode: Advance after duration
+        if mode == "PAUSE":
+            if self.mode_start_time:
+                elapsed = time.time() - self.mode_start_time
+                if elapsed >= phase["duration"]:
+                    return True
+        
+        # STANDARD_ADAPTIVE (Phase 1): Advance when all letters have appeared 20+ times (cumulative)
+        if mode == "STANDARD_ADAPTIVE":
+            all_appeared_20 = all(s.total_appearance_count >= 20 for s in self.letters_pool.values())
+            if all_appeared_20:
+                return True
+        
+        # STANDARD_MASTERY (Phase 7): Advance when all letters mastered
+        if mode == "STANDARD_MASTERY":
+            if self.is_all_mastered():
+                return True
+        
+        # Duration-based phases (STANDARD, COUPLE, SPEED)
         if phase.get("duration"):
             if self.mode_start_time:
                 elapsed = time.time() - self.mode_start_time
                 if elapsed >= phase["duration"]:
                     return True
         
+        # Count-based phases (WORDS, COUPLE)
         if phase.get("count"):
             if self.phase_item_count >= phase["count"]:
                 return True
@@ -500,8 +571,8 @@ class Week4Logic:
         return False
     
     def is_session_complete(self):
-        """Check if mastery session is complete (all phases done or all mastered)."""
-        return self.current_phase_idx >= len(self.phases) or self.is_all_mastered()
+        """Check if mastery session is complete (all phases done)."""
+        return self.current_phase_idx >= len(self.phases)
     
     def get_word_pronunciation(self):
         """Get the pronunciation details for current word target (WORDS mode)."""
