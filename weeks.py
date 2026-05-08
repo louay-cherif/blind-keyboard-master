@@ -82,6 +82,20 @@ w3words = [
 "amour","ami","famille","pere","mere","frere","soeur","enfant","voisin","relation",
 "musique","chanson","danse","film","theatre","livre","histoire","conte","roman","poeme"
 ]
+# words for week 4 (will be used in word phase of week challenge)
+w4words = [
+    "ami", "chat", "loup", "pain", "vent", "robe", "neuf", "jour", "main", "lion",
+    "fleur", "table", "porte", "chien", "plage",
+
+    "livre", "pomme", "soleil", "orange", "beurre", "maison", "papier", "vendre", "danser", "cheval",
+    "bateau", "village", "musique", "fenetre", "pouvoir",
+
+    "banane", "jardin", "tomate", "fromage", "travail", "montage", "voiture", "cuisine", "famille", "poisson",
+    "lapins", "bougie", "valises", "nuages", "pirates",
+
+    "ordinateur", "parfumee", "vacances", "chocolat", "papillon"
+]
+
 # week 1 structure
 week1 = {
                 "name": "Semaine 1: Ligne de Base",
@@ -257,6 +271,7 @@ class Week4Logic:
         self.mode = ""
         self.target = ""
         self.score = 0
+        self.words = w4words.copy()  # Words for word phase
         
         # Letter mastery tracking
         all_letters = "AZERTYUIOPQSDFGHJKLMWXCVBN"
@@ -404,12 +419,11 @@ class Week4Logic:
         
         # WORDS (Phase 4): Real word typing (practice, no mastery)
         elif mode == "WORDS":
-            words = w3words
-            if not words:
+            if not self.words:
                 self.advance_phase()
                 return self.generate_target()
             
-            self.target = random.choice(words).upper()
+            self.target = self.words.pop(0).upper()
             return self.target
         
         # SPEED (Phase 8): All letters at fixed 1.0s time
