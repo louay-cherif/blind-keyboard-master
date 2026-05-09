@@ -644,10 +644,28 @@ class Week4Logic:
         """Check if mastery session is complete (all phases done)."""
         return self.current_phase_idx >= len(self.phases)
     
+    def get_announcement_text(self, char):
+        """Get the text to announce for a character, handling majuscules and symbols."""
+        # Symbol: always return French pronunciation name
+        if char in symbol_pronounciation:
+            return symbol_pronounciation[char]
+
+        # For Week 4: differentiate upper vs lower case letters
+        if char.isalpha():
+            if char.isupper():
+                return f"{char.lower()} majuscule"   # e.g. "a majuscule" for 'A'
+            else:
+                return char                           # e.g. "a" for 'a'
+
+        # Fallback
+        return char
+
     def get_word_pronunciation(self):
         """Get the pronunciation details for current word target (WORDS mode)."""
         target = self.target
-        spelling = ", ".join(list(target))
+        # Use get_announcement_text for each character to properly handle majuscules
+        spelling_parts = [self.get_announcement_text(char) for char in target]
+        spelling = ", ".join(spelling_parts)
         
         spelling_delay = len(target) * 150 + 400
         word_audio_delay = len(target) * 100 + 300

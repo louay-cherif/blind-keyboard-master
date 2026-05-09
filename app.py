@@ -318,16 +318,12 @@ class AppBackend:
         if not text:
             return None
         
-        # For weeks 1-3, check case-insensitively
+        # For weeks 1-4 (indices 0-3), check case-insensitively
         if self.current_week_idx < 4:
             is_correct = text[-1].upper() == target.upper()
-        # For week 4 and 5, check the full input match
+        # For week 5 (index 4): exact/case-sensitive match for letters AND symbols
         elif self.current_week_idx == 4:
-            # Week 5: case-insensitive for letters, exact for symbols
-            if target.isalpha():
-                is_correct = text.upper() == target.upper()
-            else:
-                is_correct = text == target
+            is_correct = text[-1] == target
         else:
             is_correct = text == target
         
@@ -348,7 +344,11 @@ class AppBackend:
         if not text:
             return None
         
-        is_correct = text.upper() == target.upper()
+        # Week 5 (index 4): exact case-sensitive match — 'a' ≠ 'A'
+        if self.current_week_idx == 4:
+            is_correct = text == target
+        else:
+            is_correct = text.upper() == target.upper()
         should_clear = len(text) >= len(target)
         
         return {

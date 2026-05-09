@@ -288,8 +288,11 @@ class AppFrontend(QWidget):
             if result["should_log"]:
                 self.logic.log_data(self.logic.target, "Correct")
             if is_random_timed:
-                # In random_timed, don't advance - let the timer handle it
-                self.clear_input_field(self.learn_input)
+                # Advance immediately on correct answer, and reset the timer so
+                # the new character gets a fresh full time_per_char window.
+                time_per_char = phase.get("time_per_char", 1.5)
+                self.random_timed_timer.start(int(time_per_char * 1000))
+                self.update_random_timed_target()
             else:
                 self.logic.repetition_count += 1
                 self.update_learning_target()
