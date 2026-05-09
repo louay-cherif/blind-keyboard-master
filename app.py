@@ -293,18 +293,23 @@ class AppBackend:
     def get_announcement_text(self, char):
         """Get the text to announce for a character, handling majuscules and symbols."""
         from weeks import symbol_pronounciation
-        
-        # Check if it's a symbol
+
+        # Symbol: always return French pronunciation name
         if char in symbol_pronounciation:
             return symbol_pronounciation[char]
-        
-        # Check if it's a capital letter (week 5 learning)
-        if self.current_week_idx == 4 and char.isupper() and char.isalpha():
-            return f"{char} majuscule"
-        
-        # All other weeks: pass lowercase so screen reader doesn't say "majuscule"
+
+        # Week 5 only: differentiate upper vs lower
+        if self.current_week_idx == 4:
+            if char.isupper() and char.isalpha():
+                return f"{char} majuscule"   # e.g. "Q majuscule"
+            if char.islower() and char.isalpha():
+                return char                   # e.g. "q" — TTS says it normally
+
+        # Weeks 1-4: force lowercase to prevent TTS from saying "majuscule"
         if char.isalpha():
             return char.lower()
+
+        # Fallback
         return char
 
 

@@ -201,7 +201,7 @@ week5 = {
     "words": w5words,
     "learning_flow": [
         # 10 minutes random timed (1.5 secs each) for all letters across 3 rows
-        {"mode": "random_timed", "chars": "QSDFGHJKLMAZERTYUIOPWXCVBN", "duration": 600, "time_per_char": 1.5},
+        {"mode": "random_timed", "chars": "qsdfghjklmqzertyuiopwxcvbn", "duration": 600, "time_per_char": 1.5},
         
         # Learn capital letters from Q to M (home row)
         {"mode": "learn", "chars": "QSDFGHJKLM"},
