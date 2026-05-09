@@ -40,6 +40,8 @@ class AppBackend:
         
         self.week_learning_phase_idx = 0
         self.week_phase_start = None
+        self.random_timed_start = None  # For tracking random_timed phase timing
+        self.random_timed_char_start = None  # For tracking individual character timing in random_timed
         
         self.mode = ""
         self.target = ""
@@ -58,6 +60,8 @@ class AppBackend:
         self.in_random_phase = False
         self.week_learning_phase_idx = 0
         self.week_phase_start = None
+        self.random_timed_start = None
+        self.random_timed_char_start = None
         self.mode = ""
         self.target = ""
         self.score = 0
@@ -224,6 +228,19 @@ class AppBackend:
 
 
             # this function works for the learning section only
+    def generate_random_timed_char(self):
+        """Generate next character for random_timed mode. Called by timer, not by timing logic."""
+        if self.has_current_week_learning_flow() and self.week_learning_phase_idx < len(self.get_current_week_learning_flow()):
+            phase = self.get_current_week_learning_flow()[self.week_learning_phase_idx]
+            if phase.get("mode") == "random_timed":
+                elapsed = time.time() - self.week_phase_start
+                if elapsed >= phase["duration"]:
+                    return None  # Phase ended
+                chars = phase.get("chars", "")
+                self.target = random.choice(chars)
+                return self.target
+        return None
+
     def generate_learning_target(self):
         """Generate the next target character for learning phase."""
         if self.has_current_week_learning_flow() and self.week_learning_phase_idx < len(self.get_current_week_learning_flow()):
@@ -231,7 +248,12 @@ class AppBackend:
             mode = phase.get("mode")
             chars = phase.get("chars", "")
             
-            if mode == "random":
+            if mode == "random_timed":
+                # For random_timed, timer controls character changes
+                if not self.target:
+                    self.target = random.choice(chars)
+                return self.target
+            elif mode == "random":
                 if phase.get("duration"):
                     elapsed = time.time() - self.week_phase_start
                     if elapsed >= phase["duration"]:
@@ -266,6 +288,24 @@ class AppBackend:
         self.week_learning_phase_idx += 1
         self.repetition_count = 0
         self.week_phase_start = time.time()
+        self.random_timed_char_start = None  # Reset random_timed timer for next phase
+
+    def get_announcement_text(self, char):
+        """Get the text to announce for a character, handling majuscules and symbols."""
+        from weeks import symbol_pronounciation
+        
+        # Check if it's a symbol
+        if char in symbol_pronounciation:
+            return symbol_pronounciation[char]
+        
+        # Check if it's a capital letter (week 5 learning)
+        if self.current_week_idx == 4 and char.isupper() and char.isalpha():
+            return f"{char} majuscule"
+        
+        # All other weeks: pass lowercase so screen reader doesn't say "majuscule"
+        if char.isalpha():
+            return char.lower()
+        return char
 
 
     def check_learning_input(self, text, target):
@@ -273,7 +313,18 @@ class AppBackend:
         if not text:
             return None
         
-        is_correct = (text[-1].upper() == target.upper()) if self.current_week_idx < 4 else (text == target)
+        # For weeks 1-3, check case-insensitively
+        if self.current_week_idx < 4:
+            is_correct = text[-1].upper() == target.upper()
+        # For week 4 and 5, check the full input match
+        elif self.current_week_idx == 4:
+            # Week 5: case-insensitive for letters, exact for symbols
+            if target.isalpha():
+                is_correct = text.upper() == target.upper()
+            else:
+                is_correct = text == target
+        else:
+            is_correct = text == target
         
         should_log = True
         if self.has_current_week_learning_flow() and self.week_learning_phase_idx < len(self.get_current_week_learning_flow()):
