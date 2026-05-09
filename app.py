@@ -377,16 +377,35 @@ class AppBackend:
         
         return self.target
 
+    def get_char_typing_time(self, char):
+        """Return expected typing time in ms for one character based on complexity.
+        - lowercase letter : 2000 ms  (single key)
+        - uppercase letter : 3000 ms  (Shift + key)
+        - symbol / accented: 4000 ms  (AltGr or Shift combo)
+        """
+        from weeks import symbol_pronounciation
+        if char in symbol_pronounciation or (not char.isalpha()):
+            return 4000
+        if char.isupper():
+            return 3000
+        return 2000
+
     def get_word_pronunciation(self):
         """Get the pronunciation details for current word target."""
         target = self.target
-        spelling = ", ".join(self.get_announcement_text(c) for c in target)
-        
-        spelling_delay = len(target) * 150 + 400
+        announcements = [self.get_announcement_text(c) for c in target]
+        spelling = ", ".join(announcements)
+
+        # Base spelling delay on the actual TTS text length (majuscule/symbol
+        # announcements are longer than single letters)
+        total_announced_chars = sum(len(a) for a in announcements)
+        spelling_delay = total_announced_chars * 60 + 400
         word_audio_delay = len(target) * 100 + 300
         total_delay = spelling_delay + word_audio_delay
-        wait_time = len(target) * 2000
-        
+
+        # Wait time sums per-character complexity cost
+        wait_time = sum(self.get_char_typing_time(c) for c in target)
+
         return {
             "spelling": spelling,
             "spelling_delay": spelling_delay,
