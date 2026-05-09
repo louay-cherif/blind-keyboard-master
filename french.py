@@ -1,8 +1,9 @@
+import sys
 import winsound
 import time
 import os
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QLineEdit, 
-                             QLabel, QStackedWidget)
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, 
+                             QLabel, QStackedWidget, QDialog, QApplication)
 from PyQt5.QtCore import Qt, QTimer, QUrl
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from weeks import Week4Logic
@@ -67,8 +68,39 @@ class AppFrontend(QWidget):
             btn = QPushButton(week["name"])
             btn.clicked.connect(lambda checked, idx=i: self.select_week(idx))
             layout.addWidget(btn)
+        btn_quit = QPushButton("Quitter l'application")
+        btn_quit.clicked.connect(self.confirm_quit)
+        layout.addWidget(btn_quit)
         page.setLayout(layout)
         self.pages.addWidget(page)
+
+    def confirm_quit(self):
+        """Show a French confirmation dialog before exiting the app."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Quitter")
+        dialog.setMinimumWidth(480)
+        dialog.setStyleSheet(self.styleSheet())
+
+        layout = QVBoxLayout()
+
+        msg = QLineEdit("Êtes-vous sûr(e) de vouloir quitter l'application ?")
+        msg.setReadOnly(True)
+        msg.setAlignment(Qt.AlignCenter)
+        layout.addWidget(msg)
+
+        btn_row = QHBoxLayout()
+        btn_cancel = QPushButton("Annuler")
+        btn_ok = QPushButton("OK - Quitter")
+        btn_cancel.clicked.connect(dialog.reject)
+        btn_ok.clicked.connect(dialog.accept)
+        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(btn_ok)
+        layout.addLayout(btn_row)
+
+        dialog.setLayout(layout)
+
+        if dialog.exec_() == QDialog.Accepted:
+            QApplication.quit()
 
     def select_week(self, idx):
         """Select a week and move to identification page or Week4 entry"""
@@ -202,14 +234,16 @@ class AppFrontend(QWidget):
             self.btn_ok.hide()
             self.btn_stop.show()
             self.learn_input.show()
+            self.char_display_box.show()
             self.pages.setCurrentIndex(2)
-            self.update_learning_target()
-            # Check if we're in random_timed mode and start the timer if needed
+            # Start random_timed timer BEFORE showing first target so the
+            # first character gets a full time_per_char window from the start
             if self.logic.has_current_week_learning_flow() and self.logic.week_learning_phase_idx < len(self.logic.get_current_week_learning_flow()):
                 phase = self.logic.get_current_week_learning_flow()[self.logic.week_learning_phase_idx]
                 if phase.get("mode") == "random_timed":
                     time_per_char = phase.get("time_per_char", 1.5)
                     self.random_timed_timer.start(int(time_per_char * 1000))
+            self.update_learning_target()
 
     def update_learning_target(self):
         """Update target for learning mode"""
@@ -389,7 +423,7 @@ class AppFrontend(QWidget):
                 QTimer.singleShot(pronun["total_delay"], 
                                 lambda: self.start_counting(pronun["wait_time"]))
             else:
-                wait_time = len(self.logic.target) * 2000
+                wait_time = self.logic.get_word_pronunciation()["wait_time"]
                 self.start_counting(wait_time)
 
     def start_counting(self, wait_time):
