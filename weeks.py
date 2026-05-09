@@ -168,7 +168,27 @@ week4 = {
 }
 
 # words for week 5 (empty for now, will be populated later)
-w5words = []
+w5words = [
+    "Bonjour!", "Salut!", "Merci!", "Pardon?", "Ça va?",
+    "Très bien!", "École.", "Fenêtre!", "Garçon.", "Français!",
+    "Clé?", "Étoile!", "Lumière.", "Forêt!", "Mystère?",
+    "Équipe!", "Téléphone.", "Énergie!", "Éléphant.", "Crème!",
+    "À bientôt!", "Déjà vu.", "Voilà!", "Où est-il?", "Être.",
+    "Naïf!", "Façade.", "Leçon!", "Hôpital.", "Île.",
+    "Noël!", "Maïs.", "Poème!", "Cœur.", "Sœur!",
+    "Clavier!", "Rapide?", "Précision!", "Attention!", "Danger!",
+    "Combo!", "Victoire!", "Défaite?", "Alerte!", "Mission!",
+    "Ultime!", "Puissance!", "Réaction!", "Focus!", "Vitesse!",
+    "Parfait!", "Excellent!", "Incroyable!", "Énorme!", "Majuscule!",
+    "Symbole?", "Phrase.", "Question!", "Réponse.", "Mystère!",
+    "Très vite!", "À gauche.", "À droite!", "Écran.", "Souris!",
+    "Fenêtre?", "Bureau.", "Clé magique!", "Épreuve finale!",
+    "Mode ultime!", "Super combo!", "Réflexe!", "Éclair!", "Tempête!",
+    "Bonjour.", "Salut?", "Merci.", "Pardon!", "Ça alors!",
+    "Très rapide.", "Incroyable?", "Fantastique!", "Magnifique.",
+    "Silence...", "Attention.", "Prêt?", "Allez!", "Continue!",
+    "Victoire.", "Défaite.", "Énergie.", "Précision.", "Réussite!"
+]
 
 # Symbol pronunciation dictionary for screen reader announcements
 symbol_pronounciation = {
@@ -201,7 +221,7 @@ week5 = {
     "words": w5words,
     "learning_flow": [
         # 10 minutes random timed (1.5 secs each) for all letters across 3 rows
-        {"mode": "random_timed", "chars": "qsdfghjklmqzertyuiopwxcvbn", "duration": 600, "time_per_char": 1.5},
+        {"mode": "random_timed", "chars": "qsdfghjklmazertyuiopwxcvbn", "duration": 600, "time_per_char": 1.5},
         
         # Learn capital letters from Q to M (home row)
         {"mode": "learn", "chars": "QSDFGHJKLM"},
