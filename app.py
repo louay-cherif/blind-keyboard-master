@@ -368,7 +368,9 @@ class AppBackend:
         else:  # WORDS mode
             week_words = self.get_current_week_words()
             if week_words:
-                self.target = random.choice(week_words).upper()
+                word = random.choice(week_words)
+                # Week 5: keep original casing; earlier weeks uppercase for consistency
+                self.target = word if self.current_week_idx == 4 else word.upper()
             else:
                 steps = self.get_current_week_steps()
                 self.target = random.choice(steps)
@@ -378,7 +380,7 @@ class AppBackend:
     def get_word_pronunciation(self):
         """Get the pronunciation details for current word target."""
         target = self.target
-        spelling = ", ".join(list(target))
+        spelling = ", ".join(self.get_announcement_text(c) for c in target)
         
         spelling_delay = len(target) * 150 + 400
         word_audio_delay = len(target) * 100 + 300
