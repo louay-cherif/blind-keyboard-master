@@ -27,6 +27,10 @@ class AppFrontend(QWidget):
         self.practice_minute_timer = QTimer()
         self.practice_minute_timer.timeout.connect(self.evaluate_practice_adaptivity)
         
+        # Timer for random_timed learning mode
+        self.random_timed_timer = QTimer()
+        self.random_timed_timer.timeout.connect(self.update_random_timed_target)
+        
         # Media player for end-of-week message
         self.player = None
         
@@ -200,6 +204,12 @@ class AppFrontend(QWidget):
             self.learn_input.show()
             self.pages.setCurrentIndex(2)
             self.update_learning_target()
+            # Check if we're in random_timed mode and start the timer if needed
+            if self.logic.has_current_week_learning_flow() and self.logic.week_learning_phase_idx < len(self.logic.get_current_week_learning_flow()):
+                phase = self.logic.get_current_week_learning_flow()[self.logic.week_learning_phase_idx]
+                if phase.get("mode") == "random_timed":
+                    time_per_char = phase.get("time_per_char", 1.5)
+                    self.random_timed_timer.start(int(time_per_char * 1000))
 
     def update_learning_target(self):
         """Update target for learning mode"""
@@ -207,17 +217,59 @@ class AppFrontend(QWidget):
         target = self.logic.generate_learning_target()
         
         if target is None:
+            # Stop random_timed timer if active
+            self.random_timed_timer.stop()
             self.logic.advance_week_learning_phase()
             if self.logic.should_end_week_learning():
                 self.end_session()
                 return
+            # Check if next phase is random_timed
+            if self.logic.has_current_week_learning_flow() and self.logic.week_learning_phase_idx < len(self.logic.get_current_week_learning_flow()):
+                phase = self.logic.get_current_week_learning_flow()[self.logic.week_learning_phase_idx]
+                if phase.get("mode") == "random_timed":
+                    time_per_char = phase.get("time_per_char", 1.5)
+                    self.random_timed_timer.start(int(time_per_char * 1000))
             self.update_learning_target()
             return
         
         self.learn_label.setText(target)
         self.char_display_box.setText(target) 
         if self.logic.speaker:
-            self.logic.speaker.output(target)
+            announcement_text = self.logic.get_announcement_text(target)
+            self.logic.speaker.output(announcement_text)
+    
+    def update_random_timed_target(self):
+        """Update target in random_timed mode - called by timer"""
+        self.clear_input_field(self.learn_input)
+        
+        # Use the backend method to get next char for random_timed
+        target = self.logic.generate_random_timed_char()
+        
+        if target is None:
+            # Phase ended, move to next
+            self.random_timed_timer.stop()
+            self.logic.advance_week_learning_phase()
+            if self.logic.should_end_week_learning():
+                self.end_session()
+                return
+            # Check if next phase is random_timed
+            if self.logic.has_current_week_learning_flow() and self.logic.week_learning_phase_idx < len(self.logic.get_current_week_learning_flow()):
+                phase = self.logic.get_current_week_learning_flow()[self.logic.week_learning_phase_idx]
+                if phase.get("mode") == "random_timed":
+                    time_per_char = phase.get("time_per_char", 1.5)
+                    self.random_timed_timer.start(int(time_per_char * 1000))
+                    self.update_random_timed_target()
+                else:
+                    self.update_learning_target()
+            return
+        
+        self.learn_label.setText(target)
+        self.char_display_box.setText(target)
+        # Play sound for character change
+        winsound.Beep(800, 50)
+        if self.logic.speaker:
+            announcement_text = self.logic.get_announcement_text(target)
+            self.logic.speaker.output(announcement_text)
 
     def check_learn_input(self, text):
         """Validate learning input"""
@@ -225,22 +277,39 @@ class AppFrontend(QWidget):
         if result is None:
             return
         
+        # Check if we're in random_timed mode
+        is_random_timed = False
+        if self.logic.has_current_week_learning_flow() and self.logic.week_learning_phase_idx < len(self.logic.get_current_week_learning_flow()):
+            phase = self.logic.get_current_week_learning_flow()[self.logic.week_learning_phase_idx]
+            is_random_timed = phase.get("mode") == "random_timed"
+        
         if result["correct"]:
             winsound.Beep(1500, 100)
             if result["should_log"]:
                 self.logic.log_data(self.logic.target, "Correct")
-            self.logic.repetition_count += 1
-            self.update_learning_target()
+            if is_random_timed:
+                # In random_timed, don't advance - let the timer handle it
+                self.clear_input_field(self.learn_input)
+            else:
+                self.logic.repetition_count += 1
+                self.update_learning_target()
         elif result["should_clear"]:
             winsound.Beep(400, 200)
             if result["should_log"]:
                 self.logic.log_data(self.logic.target, "Error")
             self.clear_input_field(self.learn_input)
+            # Only update learning target if not in random_timed mode
+            if not is_random_timed:
+                # In non-random_timed mode, the error just clears the input
+                # The user needs to try again for this character
+                pass
 
     def end_session(self):
         """End learning session"""
         self.learn_input.hide()
         self.btn_stop.hide()
+        self.random_timed_timer.stop()  # Stop random_timed timer if active
+        self.char_display_box.hide()  # Hide the display box on end screen
         self.char_display_box.setText("FIN")
         self.learn_label.setText("FIN")
         self.result_output.setText("Session terminee.")
@@ -264,6 +333,7 @@ class AppFrontend(QWidget):
     def on_ok_clicked(self):
         if self.player and self.player.state() == QMediaPlayer.PlayingState:
             self.player.stop()
+        self.random_timed_timer.stop()  # Stop random_timed timer if active
         self.pages.setCurrentIndex(1)
         if self.logic.mode != "LETTERS":
             return
@@ -297,7 +367,8 @@ class AppFrontend(QWidget):
             self.logic.generate_game_target()
             self.target_label.setText(self.logic.target)
             if self.logic.speaker:
-                self.logic.speaker.output(self.logic.target)
+                announcement_text = self.logic.get_announcement_text(self.logic.target)
+                self.logic.speaker.output(announcement_text)
             self.input_field.setEnabled(True)
             self.input_field.setFocus()
             self.timer.start(5000)
@@ -350,6 +421,7 @@ class AppFrontend(QWidget):
     def stop_game(self):
         self.timer.stop()
         self.practice_minute_timer.stop()
+        self.random_timed_timer.stop()  # Stop random_timed timer if active
         self.pages.setCurrentIndex(3)
 
     def evaluate_practice_adaptivity(self):
