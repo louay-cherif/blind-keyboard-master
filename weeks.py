@@ -167,15 +167,71 @@ week4 = {
     ],
 }
 
+# words for week 5 (empty for now, will be populated later)
+w5words = []
+
+# Symbol pronunciation dictionary for screen reader announcements
+symbol_pronounciation = {
+    ",": "virgule",
+    ":": "deux-points",
+    "!": "point d'exclamation",
+    ".": "point",
+    "?": "point d'interrogation",
+    '"': "guillemet",
+    "é": "e accent aigu",
+    "ç": "c cedille",
+    "è": "e accent grave",
+    "(": "parenthese ouverte",
+    "à": "a accent grave",
+    ")": "parenthese fermee",
+}
+
 # week 5 structure
 week5 = {
     "name": "Semaine 5: Majuscules et Symboles",
-    "steps": ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", ",;:!?", "./§", "ALL_COMBINED"],
-    "practice_letters": ["ABCDEFGHIJKLMNOPQRSTUVWXYZ"],
-    "words": [],
+    "steps": ["QSDFGHJKLM", "AZERTYUIOP", "WXCVBN", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", ",:\\!.?\"éçè(à)"],
+    "practice_letters": [
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ",  # Majuscules only
+        "abcdefghijklmnopqrstuvwxyz",  # Minuscules only
+        ",:\\!.?\"éçè(à)",  # Symbols only
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",  # Mixed case letters
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz,:\\!.?\"éçè(à)",  # All combined
+    ],
+    "symbols": ",:\\!.?\"éçè(à)",
+    "words": w5words,
     "learning_flow": [
-        {"mode": "learn", "chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"},
-        {"mode": "random", "chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "duration": 300},
+        # 10 minutes random timed (1.5 secs each) for all letters across 3 rows
+        {"mode": "random_timed", "chars": "QSDFGHJKLMAZERTYUIOPWXCVBN", "duration": 600, "time_per_char": 1.5},
+        
+        # Learn capital letters from Q to M (home row)
+        {"mode": "learn", "chars": "QSDFGHJKLM"},
+        
+        # Random for 3 minutes on home row
+        {"mode": "random", "chars": "QSDFGHJKLM", "duration": 180},
+        
+        # Learn capital letters from Q to P (top row)
+        {"mode": "learn", "chars": "AZERTYUIOP"},
+        
+        # Random for 3 minutes on top row
+        {"mode": "random", "chars": "AZERTYUIOP", "duration": 180},
+        
+        # Learn capital letters in bottom row
+        {"mode": "learn", "chars": "WXCVBN"},
+        
+        # Random for 3 minutes on bottom row
+        {"mode": "random", "chars": "WXCVBN", "duration": 180},
+        
+        # 5 minutes random for all majuscules
+        {"mode": "random", "chars": "QSDFGHJKLMAZERTYUIOPWXCVBN", "duration": 300},
+        
+        # Learn the punctuation symbols
+        {"mode": "learn", "chars": ",:\\!.?\"éçè(à)"},
+        
+        # 5 minutes random on symbols
+        {"mode": "random", "chars": ",:\\!.?\"éçè(à)", "duration": 300},
+        
+        # Final 100-count random mixing majuscules and symbols
+        {"mode": "random", "chars": "QSDFGHJKLMAZERTYUIOPWXCVBN,:\\!.?\"éçè(à)", "count": 100},
     ],
 }
 
