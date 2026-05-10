@@ -20,21 +20,23 @@ class Week6Logic:
     Inherits from main logic to maintain connection with base app logic.
     """
     
-    def __init__(self, base_logic, user_name=""):
+    def __init__(self, base_logic, user_name="", is_english=True):
         """
         Initialize Week6Logic
         Args:
             base_logic: Reference to AppBackend instance for inheritance
             user_name: Username passed from main app
+            is_english: True for English UI, False for French UI
         """
         self.base_logic = base_logic
         self.user_name = user_name
-        
+        self.is_english = is_english
+
         # Challenge state variables
         self.xp_balance = 50
         self.xp_max = 1500
         self.boss_health = 100  # Percentage
-        self.current_rank = "Beginner"
+        self.current_rank = "Beginner" if is_english else "Débutant"
         
         # Mode tracking
         self.modes = {
@@ -54,17 +56,29 @@ class Week6Logic:
         self.csv_file_path = None
     
     def get_rank_from_xp(self):
-        """Calculate rank based on current XP"""
-        if self.xp_balance < 300:
-            return "Beginner"
-        elif self.xp_balance < 600:
-            return "Challenger"
-        elif self.xp_balance < 900:
-            return "Elite Typer"
-        elif self.xp_balance < 1200:
-            return "Warrior"
+        """Calculate rank based on current XP, in the correct language."""
+        if self.is_english:
+            if self.xp_balance < 300:
+                return "Beginner"
+            elif self.xp_balance < 600:
+                return "Challenger"
+            elif self.xp_balance < 900:
+                return "Elite Typer"
+            elif self.xp_balance < 1200:
+                return "Warrior"
+            else:
+                return "Master"
         else:
-            return "Master"
+            if self.xp_balance < 300:
+                return "Débutant"
+            elif self.xp_balance < 600:
+                return "Challenger"
+            elif self.xp_balance < 900:
+                return "Typer Élite"
+            elif self.xp_balance < 1200:
+                return "Guerrier"
+            else:
+                return "Maître"
     
     def mark_mode_complete(self, mode_key):
         """
@@ -110,17 +124,28 @@ class Week6Logic:
         return self.xp_balance >= self.xp_max and self.modes["crazy_party"]["completed"]
     
     def get_mode_status_text(self, mode_key):
-        """Get display text for mode status with helper text"""
+        """Get display text for mode status with helper text, in the correct language."""
         mode = self.modes[mode_key]
-        if mode["completed"]:
-            return "[completed] - Press to replay"
-        elif mode["status"] == "locked":
-            if mode_key == "crazy_party":
-                return "[locked] - Finish all modes above to unlock"
-            else:
-                return "[locked] - Warmup Gate required to unlock this"
-        else:  # open or unlocked
-            return "[open] - Press Space to start"
+        if self.is_english:
+            if mode["completed"]:
+                return "[completed] - Press to replay"
+            elif mode["status"] == "locked":
+                if mode_key == "crazy_party":
+                    return "[locked] - Finish all modes above to unlock"
+                else:
+                    return "[locked] - Warmup Gate required to unlock this"
+            else:  # open or unlocked
+                return "[open] - Press Enter to start"
+        else:
+            if mode["completed"]:
+                return "[complété] - Appuyez pour rejouer"
+            elif mode["status"] == "locked":
+                if mode_key == "crazy_party":
+                    return "[verrouillé] - Terminez les modes au-dessus pour déverrouiller"
+                else:
+                    return "[verrouillé] - Warmup Gate requis pour déverrouiller"
+            else:  # open or unlocked
+                return "[ouvert] - Appuyez Entrée pour commencer"
     
     def init_challenge_progress_file(self):
         """Initialize CSV file for tracking challenge progress"""
@@ -196,11 +221,15 @@ class Week6UI(QWidget):
         super().__init__()
         self.base_logic = base_logic
         self.base_logic.user_name = user_name  # Store username in base logic
-        self.logic = Week6Logic(base_logic, user_name)
         self.is_english = is_english
         self.is_shown = False
-        
-        self.setWindowTitle("Week 6 Challenge")
+
+        # Build language strings first — pages reference self.strings during setup
+        self.set_lang_strings()
+
+        self.logic = Week6Logic(base_logic, user_name, is_english)
+
+        self.setWindowTitle(self.strings["window_title"])
         self.resize(800, 600)
         
         # Apply dark theme
@@ -227,44 +256,78 @@ class Week6UI(QWidget):
         self.timer = QTimer()
     
     def set_lang_strings(self):
-        """Set language-specific strings"""
+        """Set language-specific strings. Called before any page setup."""
         if self.is_english:
             self.strings = {
+                # Window
+                "window_title": "Week 6 Challenge",
+
+                # Identification page (Page 0 — kept but skipped at runtime)
                 "id_title": "WEEK 6: ULTIMATE CHALLENGE",
-                "id_label_name": "Enter your name:",
-                "id_welcome": "Welcome to Week 6 Challenge",
                 "id_instructions": "Welcome to Week 6 Challenge",
-                "id_button_start": "Move to Challenge Battle",
+                "id_button_start": "Let's Start!",
                 "id_button_back": "Back",
-                
+
+                # Challenge page (Page 1)
                 "challenge_title": "CHALLENGE BATTLE",
-                "xp_label": "XP Balance: ",
-                "boss_health_label": "Boss Health: ",
-                "rank_label": "Rank: ",
+                "xp_display_init": "50/1500 - XP Balance",
+                "health_display_init": "100% - Boss Health",
+                "rank_display_init": "Beginner - Rank",
+                "xp_format": "{xp}/{xp_max} - XP Balance",
+                "health_format": "{health}% - Boss Health",
+                "rank_format": "{rank} - Rank",
+                "modes_header": "MODES",
                 "button_exit": "Exit",
-                
+
+                # Victory page (Page 2)
                 "victory_title": "VICTORY!",
                 "victory_message": "Congratulations! You defeated the boss!",
                 "victory_button": "Okay",
+
+                # Speaker / status messages
+                "challenge_started": "Challenge started for {name}",
+                "mode_completed": "{name} completed",
+                "mode_replay": "Replaying {name}",
+                "mode_started": "Starting {name}",
+                "boss_defeated": "You have defeated the boss",
+                "locked_crazy": "Finish all modes above to unlock",
+                "locked_other": "Warmup Gate required to unlock this",
             }
         else:
             self.strings = {
-                "id_title": "SEMAINE 6: DÉFI ULTIME",
-                "id_label_name": "Entrez votre nom :",
-                "id_welcome": "Bienvenue au défi de la Semaine 6",
+                # Window
+                "window_title": "Semaine 6 - Défi Ultime",
+
+                # Identification page (Page 0 — kept but skipped at runtime)
+                "id_title": "SEMAINE 6 : DÉFI ULTIME",
                 "id_instructions": "Bienvenue au défi de la Semaine 6",
-                "id_button_start": "Aller au Combat de Défi",
+                "id_button_start": "C'est parti !",
                 "id_button_back": "Retour",
-                
+
+                # Challenge page (Page 1)
                 "challenge_title": "COMBAT DE DÉFI",
-                "xp_label": "Solde XP : ",
-                "boss_health_label": "Santé du Boss : ",
-                "rank_label": "Rang : ",
+                "xp_display_init": "50/1500 - Solde XP",
+                "health_display_init": "100% - Santé du Boss",
+                "rank_display_init": "Débutant - Rang",
+                "xp_format": "{xp}/{xp_max} - Solde XP",
+                "health_format": "{health}% - Santé du Boss",
+                "rank_format": "{rank} - Rang",
+                "modes_header": "MODES",
                 "button_exit": "Quitter",
-                
+
+                # Victory page (Page 2)
                 "victory_title": "VICTOIRE !",
                 "victory_message": "Félicitations ! Vous avez vaincu le boss !",
                 "victory_button": "Okay",
+
+                # Speaker / status messages
+                "challenge_started": "Défi lancé pour {name}",
+                "mode_completed": "{name} complété",
+                "mode_replay": "Relancer {name}",
+                "mode_started": "Lancement de {name}",
+                "boss_defeated": "Vous avez vaincu le boss",
+                "locked_crazy": "Terminez les modes au-dessus pour déverrouiller",
+                "locked_other": "Warmup Gate requis pour déverrouiller",
             }
     
     def setup_identification_page(self):
@@ -321,7 +384,7 @@ class Week6UI(QWidget):
         xp_layout = QVBoxLayout()
         self.xp_display = QLineEdit()
         self.xp_display.setReadOnly(True)
-        self.xp_display.setText("50/1500 - XP Balance")
+        self.xp_display.setText(self.strings["xp_display_init"])
         xp_layout.addWidget(self.xp_display)
         stats_layout.addLayout(xp_layout)
         
@@ -329,7 +392,7 @@ class Week6UI(QWidget):
         health_layout = QVBoxLayout()
         self.health_display = QLineEdit()
         self.health_display.setReadOnly(True)
-        self.health_display.setText("100% - Boss Health")
+        self.health_display.setText(self.strings["health_display_init"])
         health_layout.addWidget(self.health_display)
         stats_layout.addLayout(health_layout)
         
@@ -337,7 +400,7 @@ class Week6UI(QWidget):
         rank_layout = QVBoxLayout()
         self.rank_display = QLineEdit()
         self.rank_display.setReadOnly(True)
-        self.rank_display.setText("Beginner - Rank")
+        self.rank_display.setText(self.strings["rank_display_init"])
         rank_layout.addWidget(self.rank_display)
         stats_layout.addLayout(rank_layout)
         
@@ -411,76 +474,76 @@ class Week6UI(QWidget):
         self.logic.challenge_start_time = time.time()
         self.logic.init_challenge_progress_file()
         self.pages.setCurrentIndex(1)
-        
+
         if self.base_logic.speaker:
-            msg = f"Started challenge for {self.logic.user_name}" if self.is_english else f"Défi lancé pour {self.logic.user_name}"
+            msg = self.strings["challenge_started"].format(name=self.logic.user_name)
             self.base_logic.speaker.output(msg)
     
     def on_mode_clicked(self, mode_key):
         """Handle mode button click"""
         mode = self.logic.modes[mode_key]
-        
+
         # If locked, announce unlock requirement
         if mode["status"] == "locked":
             if self.base_logic.speaker:
                 if mode_key == "crazy_party":
-                    msg = "Finish all modes above to unlock" if self.is_english else "Terminez tous les modes ci-dessus pour déverrouiller"
+                    self.base_logic.speaker.output(self.strings["locked_crazy"])
                 else:
-                    msg = "Warmup Gate required to unlock this" if self.is_english else "Warmup Gate requis pour déverrouiller"
-                self.base_logic.speaker.output(msg)
+                    self.base_logic.speaker.output(self.strings["locked_other"])
             return
-        
+
         # Mark mode as complete (placeholder for actual mode logic)
         if not mode["completed"]:
             self.logic.mark_mode_complete(mode_key)
             self.logic.save_progress()
             self.update_display()
-            
+
             # Announce mode completion
             if self.base_logic.speaker:
                 mode_name = self.logic.modes[mode_key]["name"]
-                msg = f"{mode_name} completed" if self.is_english else f"{mode_name} complété"
-                self.base_logic.speaker.output(msg)
-            
+                self.base_logic.speaker.output(self.strings["mode_completed"].format(name=mode_name))
+
             # Check if challenge is complete
             if self.logic.is_challenge_complete():
                 self.logic.save_progress()
                 self.pages.setCurrentIndex(2)
                 if self.base_logic.speaker:
-                    msg = "You have defeated the boss" if self.is_english else "Vous avez vaincu le boss"
-                    self.base_logic.speaker.output(msg)
+                    self.base_logic.speaker.output(self.strings["boss_defeated"])
                 winsound.Beep(2000, 200)
                 return
         else:
             # Mode already completed - offer replay
             if self.base_logic.speaker:
                 mode_name = self.logic.modes[mode_key]["name"]
-                msg = f"Replaying {mode_name}" if self.is_english else f"Relancer {mode_name}"
-                self.base_logic.speaker.output(msg)
-        
+                self.base_logic.speaker.output(self.strings["mode_replay"].format(name=mode_name))
+
         # TODO: Launch actual mode gameplay here
         if self.base_logic.speaker:
             mode_name = self.logic.modes[mode_key]["name"]
-            msg = f"Starting {mode_name}" if self.is_english else f"Lancement de {mode_name}"
-            self.base_logic.speaker.output(msg)
+            self.base_logic.speaker.output(self.strings["mode_started"].format(name=mode_name))
     
     def update_display(self):
         """Update all display elements"""
         # Update XP
-        self.xp_display.setText(f"{self.logic.xp_balance}/{self.logic.xp_max} - XP Balance")
-        
+        self.xp_display.setText(
+            self.strings["xp_format"].format(xp=self.logic.xp_balance, xp_max=self.logic.xp_max)
+        )
+
         # Update Boss Health
-        self.health_display.setText(f"{self.logic.boss_health}% - Boss Health")
-        
+        self.health_display.setText(
+            self.strings["health_format"].format(health=self.logic.boss_health)
+        )
+
         # Update Rank
         new_rank = self.logic.get_rank_from_xp()
-        self.rank_display.setText(f"{new_rank} - Rank")
-        
+        self.rank_display.setText(
+            self.strings["rank_format"].format(rank=new_rank)
+        )
+
         # Update mode buttons
         for mode_key, btn in self.mode_buttons.items():
             mode_data = self.logic.modes[mode_key]
             status_text = self.logic.get_mode_status_text(mode_key)
-            
             btn.setText(f"{mode_data['name']} {status_text}")
             # All buttons remain enabled - locked ones just show status and hint
     
