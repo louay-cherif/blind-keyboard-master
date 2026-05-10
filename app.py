@@ -30,6 +30,7 @@ class AppBackend:
             {"name": "Semaine 3: Ligne Inférieure"},
             {"name": "Semaine 4: Mixage des Lignes"},
             {"name": "Semaine 5: Majuscules et Symboles"},
+            {"name": "Semaine 6: Défi Ultime"},
         ]
         else:
             self.weeks = [
@@ -38,6 +39,7 @@ class AppBackend:
             {"name": "Week 3: Lower Row"},
             {"name": "Week 4: Mixed Rows"},
             {"name": "Week 5: Capitals and Symbols"},
+            {"name": "Week 6: Ultimate Challenge"},
         ]
         self.current_week_config = None
         self.current_week_words = None

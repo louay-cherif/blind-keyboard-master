@@ -54,6 +54,7 @@ class AppFrontend(QWidget):
         self.setup_week4_entry_page()
         self.setup_week4_game_page()
         self.setup_week4_end_page()
+        self.setup_week6_identification_page()
         
         layout = QVBoxLayout()
         layout.addWidget(self.pages)
@@ -103,10 +104,12 @@ class AppFrontend(QWidget):
             QApplication.quit()
 
     def select_week(self, idx):
-        """Select a week and move to identification page or Week4 entry"""
+        """Select a week and move to identification page or special entry"""
         self.logic.current_week_idx = idx
         if idx == 3:
             self.pages.setCurrentIndex(5)  # Week4 entry page
+        elif idx == 5:
+            self.pages.setCurrentIndex(8)  # Week6 identification page
         else:
             self.pages.setCurrentIndex(1)  # Normal identification page
 
@@ -737,3 +740,57 @@ class AppFrontend(QWidget):
         self.logic = self._base_logic
         self.logic.reset()
         self.pages.setCurrentIndex(0)
+
+    # ===== WEEK 6: DÉFI ULTIME =====
+
+    def setup_week6_identification_page(self):
+        """Page 8: Week 6 instructions page (French) - username from page 1"""
+        page = QWidget()
+        layout = QVBoxLayout()
+        
+        # Title
+        title = QLabel("SEMAINE 6: DÉFI ULTIME")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("font-size: 32px; font-weight: bold; color: #e94560;")
+        layout.addWidget(title)
+        
+        # Instructions readonly field
+        self.w6_instructions = QLineEdit()
+        self.w6_instructions.setReadOnly(True)
+        self.w6_instructions.setText("Bienvenue au défi de la Semaine 6")
+        self.w6_instructions.setMinimumHeight(150)
+        layout.addWidget(self.w6_instructions)
+        
+        self.w6_name_input = QLineEdit()
+        self.w6_name_input.setPlaceholderText("Entrez votre nom.")
+        layout.addWidget(self.w6_name_input)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        
+        btn_start = QPushButton("Aller au Combat de Défi")
+        btn_start.clicked.connect(self.start_week6_challenge)
+        btn_row.addWidget(btn_start)
+        
+        btn_back = QPushButton("Retour")
+        btn_back.clicked.connect(self.go_back_to_week_selection)
+        btn_row.addWidget(btn_back)
+        
+        layout.addLayout(btn_row)
+        layout.addStretch()
+        
+        page.setLayout(layout)
+        self.pages.addWidget(page)
+
+    def start_week6_challenge(self):
+        """Start Week 6 challenge with username from identification page (French)"""
+        username = self.w6_name_input.text().strip()
+        if not username:
+            if self.logic.speaker:
+                self.logic.speaker.output("Veuillez entrer votre nom")
+            return
+        
+        # Import and launch Week 6 challenge with username
+        from w6challenge import Week6UI
+        self.w6_ui = Week6UI(self.logic, user_name=username, is_english=False)
+        self.w6_ui.show()
