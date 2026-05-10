@@ -757,18 +757,28 @@ class AppFrontend(QWidget):
         # Instructions readonly field
         self.w6_instructions = QLineEdit()
         self.w6_instructions.setReadOnly(True)
-        self.w6_instructions.setText("Welcome to Week 6 Challenge")
+        self.w6_instructions.setText(
+            "WEEK 6 — THE ULTIMATE CHALLENGE! "
+            "This is it. Six legendary modes stand between you and total keyboard mastery. "
+            "Conquer the Warmup Gate, blaze through Combo Rush, sharpen your aim in Precision Arena, "
+            "power through Sentence Mode, survive the Survival Gate, "
+            "and unleash chaos in the Crazy Keyboard Party! "
+            "Every mode you defeat drains the Boss health and earns you XP. "
+            "Climb the ranks from Beginner all the way to Master. "
+            "Reach 1500 XP and the Boss falls — VICTORY is yours. "
+            "Enter your name below and let the battle begin!"
+        )
         self.w6_instructions.setMinimumHeight(150)
         layout.addWidget(self.w6_instructions)
-        
+
         self.w6_name_input = QLineEdit()
-        self.w6_name_input.setPlaceholderText("Enter your username...")
+        self.w6_name_input.setPlaceholderText("Enter your name...")
         layout.addWidget(self.w6_name_input)
 
         # Buttons
         btn_row = QHBoxLayout()
-        
-        btn_start = QPushButton("Move to Challenge Battle")
+
+        btn_start = QPushButton("Let's Start!")
         btn_start.clicked.connect(self.start_week6_challenge)
         btn_row.addWidget(btn_start)
         
@@ -790,7 +800,10 @@ class AppFrontend(QWidget):
                 self.logic.speaker.output("Please enter your name")
             return
         
-        # Import and launch Week 6 challenge with username
+        # Import and launch Week 6 challenge with username.
+        # Call start_challenge() immediately so Week6UI jumps straight to the
+        # battle page — Page 8 of the main app already served as the intro.
         from w6challenge import Week6UI
         self.w6_ui = Week6UI(self.logic, user_name=username, is_english=True)
         self.w6_ui.show()
+        self.w6_ui.start_challenge()
