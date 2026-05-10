@@ -23,4 +23,4 @@ class LanguageSelector(QDialog):
 
     def select_language(self, lang):
         self.selected = lang
-    self.accept()   # close dialog with QDialog.Accepted           
+        self.accept()   # close dialog with QDialog.Accepted           
