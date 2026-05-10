@@ -5,7 +5,8 @@ import csv
 import os
 import time
 import importlib
-from PyQt5.QtWidgets import QApplication
+from select_lan import LanguageSelector
+from PyQt5.QtWidgets import QApplication, QDialog
 from weeks import Week4Logic
 
 try:
@@ -420,12 +421,21 @@ class AppBackend:
 
 
 
-# Entry Point
+# Entry Point (now supporting language selection dialog before main app)
 if __name__ == "__main__":
-    from french import AppFrontend
-    
     app = QApplication(sys.argv)
-    logic = AppBackend()
-    win = AppFrontend(logic)
-    win.show()
-    sys.exit(app.exec_())
+    logic = AppBackend()          # shared backend instance
+
+    # Show language selection dialog
+    selector = LanguageSelector()
+    if selector.exec_() == QDialog.Accepted and selector.selected:
+        if selector.selected == 'en':
+            from english import AppFrontend as Frontend
+        else:  # 'fr'
+            from french import AppFrontend as Frontend
+
+        window = Frontend(logic)
+        window.show()
+        sys.exit(app.exec_())
+    else:
+        sys.exit(0)   # user closed dialog without choosing
