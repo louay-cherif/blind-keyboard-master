@@ -17,18 +17,27 @@ except ImportError:
 
 
 class AppBackend:
-    def __init__(self):
+    def __init__(self, lang='fr'):
         self.speaker = auto.Auto() if HAS_ACCESSIBLE else None
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
         self.data_dir = os.path.join(self.base_dir, "data")
         os.makedirs(self.data_dir, exist_ok=True)
         
-        self.weeks = [
+        if lang == 'fr':
+           self.weeks = [
             {"name": "Semaine 1: Ligne de Base"},
             {"name": "Semaine 2: Ligne Supérieure"},
             {"name": "Semaine 3: Ligne Inférieure"},
             {"name": "Semaine 4: Mixage des Lignes"},
             {"name": "Semaine 5: Majuscules et Symboles"},
+        ]
+        else:
+            self.weeks = [
+            {"name": "Week 1: Baseline"},
+            {"name": "Week 2: Upper Row"},
+            {"name": "Week 3: Lower Row"},
+            {"name": "Week 4: Mixed Rows"},
+            {"name": "Week 5: Capitals and Symbols"},
         ]
         self.current_week_config = None
         self.current_week_words = None
@@ -424,18 +433,16 @@ class AppBackend:
 # Entry Point (now supporting language selection dialog before main app)
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    logic = AppBackend()          # shared backend instance
-
-    # Show language selection dialog
     selector = LanguageSelector()
     if selector.exec_() == QDialog.Accepted and selector.selected:
+        # Pass the chosen language to the backend
+        logic = AppBackend(lang=selector.selected)
         if selector.selected == 'en':
             from english import AppFrontend as Frontend
-        else:  # 'fr'
+        else:
             from french import AppFrontend as Frontend
-
         window = Frontend(logic)
         window.show()
         sys.exit(app.exec_())
     else:
-        sys.exit(0)   # user closed dialog without choosing
+        sys.exit(0)
