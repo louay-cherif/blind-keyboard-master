@@ -6,10 +6,83 @@ Separated UI and Logic classes for maintainability and accessibility
 import time
 import os
 import csv
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, 
-                             QLabel, QStackedWidget, QDialog, QApplication, QMessageBox)
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
+                             QLabel, QStackedWidget, QDialog, QApplication, QMessageBox,
+                             QTextBrowser)
 from PyQt5.QtCore import Qt, QTimer
 import winsound
+
+# ============= ACCESSIBLE WIDGETS =============
+
+class AccessibleLabel(QLabel):
+    """
+    A keyboard-focusable QLabel with separate visual and accessible text.
+
+    Visual text   — what appears on screen (compact, e.g. "50/1500").
+    Accessible text — what the screen reader announces when the widget
+                      receives focus (verbose, e.g. "50 out of 1500 XP balance").
+
+    Tab-focusable so blind users can navigate to it with the keyboard.
+    The screen reader picks up accessibleName automatically on focus.
+    """
+
+    def __init__(self, visual_text="", accessible_text="", parent=None):
+        super().__init__(visual_text, parent)
+        # Make the label part of the Tab focus chain
+        self.setFocusPolicy(Qt.TabFocus)
+        # Screen readers read accessibleName on focus — set to verbose text
+        self.setAccessibleName(accessible_text if accessible_text else visual_text)
+        # Styling: match the readonly QLineEdit look from the app dark theme
+        self.setStyleSheet(
+            "padding: 12px;"
+            "background-color: #1a1a2e;"
+            "color: #f9d342;"
+            "border: 2px solid #f9d342;"
+            "border-radius: 10px;"
+            "font-size: 22px;"
+        )
+        self.setAlignment(Qt.AlignCenter)
+        self.setWordWrap(False)
+
+    def update_text(self, visual_text, accessible_text=None):
+        """
+        Update both displayed and accessible text in one call.
+        If accessible_text is omitted, falls back to visual_text.
+        """
+        self.setText(visual_text)
+        self.setAccessibleName(accessible_text if accessible_text is not None else visual_text)
+
+
+class AccessibleBrowser(QTextBrowser):
+    """
+    A read-only, word-wrapped text area for long multiline content.
+
+    Replaces readonly QLineEdit for multi-paragraph descriptions.
+    QTextBrowser handles word-wrap and scrolling natively.
+    Tab-focusable; accessibleName is set to the full plain text so
+    screen readers can announce the complete content on focus.
+    """
+
+    def __init__(self, text="", accessible_text="", parent=None):
+        super().__init__(parent)
+        self.setReadOnly(True)
+        self.setOpenExternalLinks(False)
+        # Display plain text (not HTML) — preserves line breaks naturally
+        self.setPlainText(text)
+        # Tab-focusable
+        self.setFocusPolicy(Qt.TabFocus)
+        # Screen reader text: use accessible_text if given, otherwise full plain text
+        self.setAccessibleName(accessible_text if accessible_text else text)
+        # Styling: match the app dark theme readonly look
+        self.setStyleSheet(
+            "padding: 14px;"
+            "background-color: #1a1a2e;"
+            "color: #f9d342;"
+            "border: 2px solid #f9d342;"
+            "border-radius: 10px;"
+            "font-size: 20px;"
+        )
+
 
 # ============= WEEK 6 LOGIC =============
 
@@ -50,10 +123,16 @@ class Week6Logic:
         
         # Track completion order
         self.completed_modes_count = 0
-        
+
         # Challenge timing
         self.challenge_start_time = None
         self.csv_file_path = None
+
+        # Whether existing progress was found and restored on this session start
+        self.progress_loaded = False
+
+        # Restore any saved progress for this user right away
+        self.load_progress()
     
     def get_rank_from_xp(self):
         """Calculate rank based on current XP, in the correct language."""
@@ -147,6 +226,74 @@ class Week6Logic:
             else:  # open or unlocked
                 return "[ouvert] - Appuyez Entrée pour commencer"
     
+    def load_progress(self):
+        """
+        Read the most recent row from this user's Week 6 CSV and restore state.
+        Restores: XP balance, boss health, completed modes, and unlock statuses.
+        Safe to call on first run — does nothing if no file exists.
+        """
+        if not self.user_name:
+            return
+
+        clean_name = self.base_logic.get_clean_username()
+        if not clean_name:
+            return
+
+        user_dir = os.path.join(self.base_logic.data_dir, clean_name)
+        csv_path = os.path.join(user_dir, f"{clean_name}_Week6_Challenge.csv")
+
+        if not os.path.exists(csv_path):
+            return  # First time — keep defaults
+
+        try:
+            last_row = None
+            with open(csv_path, 'r', newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    last_row = row  # Iterate all rows; keep the last one
+
+            if last_row is None:
+                return
+
+            # --- Restore XP ---
+            self.xp_balance = int(float(last_row["XP Balance"]))
+
+            # --- Restore boss health ---
+            self.boss_health = int(float(last_row["Boss Health"]))
+
+            # --- Restore completed modes ---
+            completed_str = last_row.get("Completed Modes", "none").strip()
+            completed_keys = []
+            if completed_str and completed_str.lower() != "none":
+                completed_keys = [k.strip() for k in completed_str.split(",") if k.strip() in self.modes]
+
+            for mode_key in completed_keys:
+                self.modes[mode_key]["status"] = "done"
+                self.modes[mode_key]["completed"] = True
+
+            self.completed_modes_count = len(completed_keys)
+
+            # --- Re-apply unlock logic ---
+            # After the first mode is completed every non-crazy_party mode unlocks
+            if self.completed_modes_count >= 1:
+                for mode_key, data in self.modes.items():
+                    if mode_key != "crazy_party" and not data["completed"]:
+                        data["status"] = "unlocked"
+
+            # Crazy party only unlocks after all 5 other modes are done
+            if self.completed_modes_count >= 5:
+                if not self.modes["crazy_party"]["completed"]:
+                    self.modes["crazy_party"]["status"] = "unlocked"
+
+            # Keep the csv_file_path so save_progress() works immediately
+            self.csv_file_path = csv_path
+
+            self.progress_loaded = True
+
+        except Exception:
+            # Any read/parse error → silently start fresh, don't crash
+            pass
+
     def init_challenge_progress_file(self):
         """Initialize CSV file for tracking challenge progress"""
         if not self.user_name:
@@ -268,30 +415,32 @@ class Week6UI(QWidget):
                 "id_button_start": "Let's Start!",
                 "id_button_back": "Back",
 
-                # Challenge page (Page 1)
+                # Challenge page (Page 1) — stats: visual (compact) + accessible (verbose)
                 "challenge_title": "CHALLENGE BATTLE",
-                "xp_display_init": "50/1500 - XP Balance",
-                "health_display_init": "100% - Boss Health",
-                "rank_display_init": "Beginner - Rank",
-                "xp_format": "{xp}/{xp_max} - XP Balance",
-                "health_format": "{health}% - Boss Health",
-                "rank_format": "{rank} - Rank",
+                "xp_visual":          "{xp}/{xp_max}",
+                "xp_accessible":      "{xp} out of {xp_max}, XP balance",
+                "health_visual":      "{health}%",
+                "health_accessible":  "Boss health: {health} percent",
+                "rank_visual":        "{rank}",
+                "rank_accessible":    "Current rank: {rank}",
                 "modes_header": "MODES",
                 "button_exit": "Exit",
 
                 # Victory page (Page 2)
                 "victory_title": "VICTORY!",
-                "victory_message": "Congratulations! You defeated the boss!",
+                "victory_message":    "Congratulations! You defeated the boss!",
+                "victory_accessible": "Congratulations! You have defeated the boss! Well done!",
                 "victory_button": "Okay",
 
                 # Speaker / status messages
-                "challenge_started": "Challenge started for {name}",
                 "mode_completed": "{name} completed",
                 "mode_replay": "Replaying {name}",
                 "mode_started": "Starting {name}",
                 "boss_defeated": "You have defeated the boss",
                 "locked_crazy": "Finish all modes above to unlock",
                 "locked_other": "Warmup Gate required to unlock this",
+                "progress_loaded": "Welcome back, {name}! Your progress has been restored.",
+                "progress_fresh": "Challenge started for {name}",
             }
         else:
             self.strings = {
@@ -304,30 +453,32 @@ class Week6UI(QWidget):
                 "id_button_start": "C'est parti !",
                 "id_button_back": "Retour",
 
-                # Challenge page (Page 1)
+                # Challenge page (Page 1) — stats: visual (compact) + accessible (verbose)
                 "challenge_title": "COMBAT DE DÉFI",
-                "xp_display_init": "50/1500 - Solde XP",
-                "health_display_init": "100% - Santé du Boss",
-                "rank_display_init": "Débutant - Rang",
-                "xp_format": "{xp}/{xp_max} - Solde XP",
-                "health_format": "{health}% - Santé du Boss",
-                "rank_format": "{rank} - Rang",
+                "xp_visual":          "{xp}/{xp_max}",
+                "xp_accessible":      "{xp} sur {xp_max}, solde XP",
+                "health_visual":      "{health}%",
+                "health_accessible":  "Santé du Boss: {health} pourcent",
+                "rank_visual":        "{rank}",
+                "rank_accessible":    "Rang actuel: {rank}",
                 "modes_header": "MODES",
                 "button_exit": "Quitter",
 
                 # Victory page (Page 2)
                 "victory_title": "VICTOIRE !",
-                "victory_message": "Félicitations ! Vous avez vaincu le boss !",
+                "victory_message":    "Félicitations ! Vous avez vaincu le boss !",
+                "victory_accessible": "Félicitations ! Vous avez vaincu le boss ! Bravo !",
                 "victory_button": "Okay",
 
                 # Speaker / status messages
-                "challenge_started": "Défi lancé pour {name}",
                 "mode_completed": "{name} complété",
                 "mode_replay": "Relancer {name}",
                 "mode_started": "Lancement de {name}",
                 "boss_defeated": "Vous avez vaincu le boss",
                 "locked_crazy": "Terminez les modes au-dessus pour déverrouiller",
                 "locked_other": "Warmup Gate requis pour déverrouiller",
+                "progress_loaded": "Bon retour, {name} ! Votre progression a été restaurée.",
+                "progress_fresh": "Défi lancé pour {name}",
             }
     
     def setup_identification_page(self):
@@ -343,10 +494,11 @@ class Week6UI(QWidget):
         title_label.setStyleSheet("font-size: 32px; font-weight: bold; color: #e94560;")
         layout.addWidget(title_label)
         
-        # Welcome/Instructions readonly field
-        self.id_instructions = QLineEdit()
-        self.id_instructions.setReadOnly(True)
-        self.id_instructions.setText(self.strings["id_instructions"])
+        # Welcome/Instructions — long text uses AccessibleBrowser for proper word-wrap
+        self.id_instructions = AccessibleBrowser(
+            text=self.strings["id_instructions"],
+            accessible_text=self.strings["id_instructions"],
+        )
         self.id_instructions.setMinimumHeight(150)
         layout.addWidget(self.id_instructions)
         
@@ -382,25 +534,29 @@ class Week6UI(QWidget):
         
         # XP Balance
         xp_layout = QVBoxLayout()
-        self.xp_display = QLineEdit()
-        self.xp_display.setReadOnly(True)
-        self.xp_display.setText(self.strings["xp_display_init"])
+        self.xp_display = AccessibleLabel(
+            visual_text=self.strings["xp_visual"].format(xp=50, xp_max=1500),
+            accessible_text=self.strings["xp_accessible"].format(xp=50, xp_max=1500),
+        )
         xp_layout.addWidget(self.xp_display)
         stats_layout.addLayout(xp_layout)
-        
+
         # Boss Health
         health_layout = QVBoxLayout()
-        self.health_display = QLineEdit()
-        self.health_display.setReadOnly(True)
-        self.health_display.setText(self.strings["health_display_init"])
+        self.health_display = AccessibleLabel(
+            visual_text=self.strings["health_visual"].format(health=100),
+            accessible_text=self.strings["health_accessible"].format(health=100),
+        )
         health_layout.addWidget(self.health_display)
         stats_layout.addLayout(health_layout)
-        
+
         # Rank
         rank_layout = QVBoxLayout()
-        self.rank_display = QLineEdit()
-        self.rank_display.setReadOnly(True)
-        self.rank_display.setText(self.strings["rank_display_init"])
+        init_rank = self.logic.get_rank_from_xp()
+        self.rank_display = AccessibleLabel(
+            visual_text=self.strings["rank_visual"].format(rank=init_rank),
+            accessible_text=self.strings["rank_accessible"].format(rank=init_rank),
+        )
         rank_layout.addWidget(self.rank_display)
         stats_layout.addLayout(rank_layout)
         
@@ -454,10 +610,12 @@ class Week6UI(QWidget):
         layout.addWidget(title_label)
         
         # Message
-        message = QLineEdit()
-        message.setReadOnly(True)
-        message.setText(self.strings["victory_message"])
+        message = AccessibleLabel(
+            visual_text=self.strings["victory_message"],
+            accessible_text=self.strings["victory_accessible"],
+        )
         message.setMinimumHeight(100)
+        message.setWordWrap(True)
         layout.addWidget(message)
         
         # Okay button
@@ -470,13 +628,19 @@ class Week6UI(QWidget):
         self.pages.addWidget(page)
     
     def start_challenge(self):
-        """Start the challenge"""
+        """Start the challenge. Refreshes display immediately so restored progress is visible."""
         self.logic.challenge_start_time = time.time()
         self.logic.init_challenge_progress_file()
         self.pages.setCurrentIndex(1)
 
+        # Refresh all widgets to reflect whatever state was loaded from CSV
+        self.update_display()
+
         if self.base_logic.speaker:
-            msg = self.strings["challenge_started"].format(name=self.logic.user_name)
+            if self.logic.progress_loaded:
+                msg = self.strings["progress_loaded"].format(name=self.logic.user_name)
+            else:
+                msg = self.strings["progress_fresh"].format(name=self.logic.user_name)
             self.base_logic.speaker.output(msg)
     
     def on_mode_clicked(self, mode_key):
@@ -523,21 +687,24 @@ class Week6UI(QWidget):
             self.base_logic.speaker.output(self.strings["mode_started"].format(name=mode_name))
     
     def update_display(self):
-        """Update all display elements"""
-        # Update XP
-        self.xp_display.setText(
-            self.strings["xp_format"].format(xp=self.logic.xp_balance, xp_max=self.logic.xp_max)
+        """Update all display elements with both visual and accessible text."""
+        xp = self.logic.xp_balance
+        xp_max = self.logic.xp_max
+        self.xp_display.update_text(
+            self.strings["xp_visual"].format(xp=xp, xp_max=xp_max),
+            self.strings["xp_accessible"].format(xp=xp, xp_max=xp_max),
         )
 
-        # Update Boss Health
-        self.health_display.setText(
-            self.strings["health_format"].format(health=self.logic.boss_health)
+        health = self.logic.boss_health
+        self.health_display.update_text(
+            self.strings["health_visual"].format(health=health),
+            self.strings["health_accessible"].format(health=health),
         )
 
-        # Update Rank
-        new_rank = self.logic.get_rank_from_xp()
-        self.rank_display.setText(
-            self.strings["rank_format"].format(rank=new_rank)
+        rank = self.logic.get_rank_from_xp()
+        self.rank_display.update_text(
+            self.strings["rank_visual"].format(rank=rank),
+            self.strings["rank_accessible"].format(rank=rank),
         )
 
         # Update mode buttons
@@ -545,7 +712,6 @@ class Week6UI(QWidget):
             mode_data = self.logic.modes[mode_key]
             status_text = self.logic.get_mode_status_text(mode_key)
             btn.setText(f"{mode_data['name']} {status_text}")
-            # All buttons remain enabled - locked ones just show status and hint
     
     def exit_challenge(self):
         """Exit the challenge and save progress"""
