@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLi
 from PyQt5.QtCore import Qt, QTimer, QUrl
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from weeks import Week4Logic
+from w6challenge import AccessibleBrowser, AccessibleLabel
 
 
 class AppFrontend(QWidget):
@@ -91,7 +92,7 @@ class AppFrontend(QWidget):
 
         btn_row = QHBoxLayout()
         btn_cancel = QPushButton("Cancel")
-        btn_ok = QPushButton("OK — Quit")
+        btn_ok = QPushButton("OK - Quit")
         btn_cancel.clicked.connect(dialog.reject)
         btn_ok.clicked.connect(dialog.accept)
         btn_row.addWidget(btn_cancel)
@@ -153,11 +154,15 @@ class AppFrontend(QWidget):
         self.learn_input = QLineEdit()
         self.learn_input.textChanged.connect(self.check_learn_input)
         
-        # 2. مربع العرض أصبح هو الثاني
-        self.char_display_box = QLineEdit()
-        self.char_display_box.setReadOnly(True)
-        self.char_display_box.setAlignment(Qt.AlignCenter)
-        self.char_display_box.setStyleSheet("font-size: 110px; color: #f9d342; border: 3px solid #f9d342; height: 160px;")
+        # 2. Character display box - AccessibleLabel so screen reader announces
+        #    the verbose name (e.g. "q majuscule") while showing just the character visually
+        self.char_display_box = AccessibleLabel(visual_text="", accessible_text="")
+        # Override default AccessibleLabel style to keep the large-font look
+        self.char_display_box.setStyleSheet(
+            "font-size: 110px; color: #f9d342; border: 3px solid #f9d342;"
+            "background-color: #1a1a2e; border-radius: 10px; padding: 8px;"
+        )
+        self.char_display_box.setMinimumHeight(160)
         
         self.learn_label = QLabel("")
         self.learn_label.setAlignment(Qt.AlignCenter)
@@ -270,9 +275,9 @@ class AppFrontend(QWidget):
             return
         
         self.learn_label.setText(target)
-        self.char_display_box.setText(target) 
+        announcement_text = self.logic.get_announcement_text(target)
+        self.char_display_box.update_text(target, announcement_text)
         if self.logic.speaker:
-            announcement_text = self.logic.get_announcement_text(target)
             self.logic.speaker.output(announcement_text)
     
     def update_random_timed_target(self):
@@ -301,11 +306,11 @@ class AppFrontend(QWidget):
             return
         
         self.learn_label.setText(target)
-        self.char_display_box.setText(target)
+        announcement_text = self.logic.get_announcement_text(target)
+        self.char_display_box.update_text(target, announcement_text)
         # Play sound for character change
         winsound.Beep(800, 50)
         if self.logic.speaker:
-            announcement_text = self.logic.get_announcement_text(target)
             self.logic.speaker.output(announcement_text)
 
     def check_learn_input(self, text):
@@ -350,7 +355,7 @@ class AppFrontend(QWidget):
         self.btn_stop.hide()
         self.random_timed_timer.stop()  # Stop random_timed timer if active
         self.char_display_box.hide()  # Hide the display box on end screen
-        self.char_display_box.setText("END")
+        self.char_display_box.update_text("END", "End of session")
         self.learn_label.setText("END")
         self.result_output.setText("Session complete.")
         self.result_output.show()
@@ -754,21 +759,23 @@ class AppFrontend(QWidget):
         title.setStyleSheet("font-size: 32px; font-weight: bold; color: #e94560;")
         layout.addWidget(title)
         
-        # Instructions readonly field
-        self.w6_instructions = QLineEdit()
-        self.w6_instructions.setReadOnly(True)
-        self.w6_instructions.setText(
-            "WEEK 6 — THE ULTIMATE CHALLENGE! "
+        # Long game description - uses AccessibleBrowser for word-wrap and screen reader support
+        description_text = (
+            "WEEK 6 - THE ULTIMATE CHALLENGE! "
             "This is it. Six legendary modes stand between you and total keyboard mastery. "
             "Conquer the Warmup Gate, blaze through Combo Rush, sharpen your aim in Precision Arena, "
             "power through Sentence Mode, survive the Survival Gate, "
             "and unleash chaos in the Crazy Keyboard Party! "
             "Every mode you defeat drains the Boss health and earns you XP. "
             "Climb the ranks from Beginner all the way to Master. "
-            "Reach 1500 XP and the Boss falls — VICTORY is yours. "
+            "Reach 1500 XP and the Boss falls - VICTORY is yours. "
             "Enter your name below and let the battle begin!"
         )
-        self.w6_instructions.setMinimumHeight(150)
+        self.w6_instructions = AccessibleBrowser(
+            text=description_text,
+            accessible_text=description_text,
+        )
+        self.w6_instructions.setMinimumHeight(180)
         layout.addWidget(self.w6_instructions)
 
         self.w6_name_input = QLineEdit()
@@ -802,7 +809,7 @@ class AppFrontend(QWidget):
         
         # Import and launch Week 6 challenge with username.
         # Call start_challenge() immediately so Week6UI jumps straight to the
-        # battle page — Page 8 of the main app already served as the intro.
+        # battle page - Page 8 of the main app already served as the intro.
         from w6challenge import Week6UI
         self.w6_ui = Week6UI(self.logic, user_name=username, is_english=True)
         self.w6_ui.show()

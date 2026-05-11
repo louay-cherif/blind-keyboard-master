@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLi
 from PyQt5.QtCore import Qt, QTimer, QUrl
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from weeks import Week4Logic
+from w6challenge import AccessibleBrowser, AccessibleLabel
 
 
 class AppFrontend(QWidget):
@@ -153,11 +154,15 @@ class AppFrontend(QWidget):
         self.learn_input = QLineEdit()
         self.learn_input.textChanged.connect(self.check_learn_input)
         
-        # 2. مربع العرض أصبح هو الثاني
-        self.char_display_box = QLineEdit()
-        self.char_display_box.setReadOnly(True)
-        self.char_display_box.setAlignment(Qt.AlignCenter)
-        self.char_display_box.setStyleSheet("font-size: 110px; color: #f9d342; border: 3px solid #f9d342; height: 160px;")
+        # 2. Boîte d'affichage du caractère - AccessibleLabel pour que le lecteur d'écran
+        #    annonce le nom verbeux (ex. "q majuscule") tout en affichant juste le caractère
+        self.char_display_box = AccessibleLabel(visual_text="", accessible_text="")
+        # Remplacer le style par défaut pour conserver la grande police
+        self.char_display_box.setStyleSheet(
+            "font-size: 110px; color: #f9d342; border: 3px solid #f9d342;"
+            "background-color: #1a1a2e; border-radius: 10px; padding: 8px;"
+        )
+        self.char_display_box.setMinimumHeight(160)
         
         self.learn_label = QLabel("")
         self.learn_label.setAlignment(Qt.AlignCenter)
@@ -270,9 +275,9 @@ class AppFrontend(QWidget):
             return
         
         self.learn_label.setText(target)
-        self.char_display_box.setText(target) 
+        announcement_text = self.logic.get_announcement_text(target)
+        self.char_display_box.update_text(target, announcement_text)
         if self.logic.speaker:
-            announcement_text = self.logic.get_announcement_text(target)
             self.logic.speaker.output(announcement_text)
     
     def update_random_timed_target(self):
@@ -301,11 +306,11 @@ class AppFrontend(QWidget):
             return
         
         self.learn_label.setText(target)
-        self.char_display_box.setText(target)
+        announcement_text = self.logic.get_announcement_text(target)
+        self.char_display_box.update_text(target, announcement_text)
         # Play sound for character change
         winsound.Beep(800, 50)
         if self.logic.speaker:
-            announcement_text = self.logic.get_announcement_text(target)
             self.logic.speaker.output(announcement_text)
 
     def check_learn_input(self, text):
@@ -350,7 +355,7 @@ class AppFrontend(QWidget):
         self.btn_stop.hide()
         self.random_timed_timer.stop()  # Stop random_timed timer if active
         self.char_display_box.hide()  # Hide the display box on end screen
-        self.char_display_box.setText("FIN")
+        self.char_display_box.update_text("FIN", "Fin de session")
         self.learn_label.setText("FIN")
         self.result_output.setText("Session terminee.")
         self.result_output.show()
@@ -754,10 +759,8 @@ class AppFrontend(QWidget):
         title.setStyleSheet("font-size: 32px; font-weight: bold; color: #e94560;")
         layout.addWidget(title)
         
-        # Instructions readonly field
-        self.w6_instructions = QLineEdit()
-        self.w6_instructions.setReadOnly(True)
-        self.w6_instructions.setText(
+        # Longue description du jeu - AccessibleBrowser pour le retour à la ligne et le lecteur d'écran
+        description_text = (
             "SEMAINE 6 - LE DÉFI ULTIME ! "
             "C'est le moment. Six modes légendaires vous séparent de la maîtrise totale du clavier. "
             "Conquérez le Warmup Gate, foncez dans le Combo Rush, affûtez votre précision dans la Precision Arena, "
@@ -768,7 +771,11 @@ class AppFrontend(QWidget):
             "Atteignez 1500 XP et le Boss tombe - la VICTOIRE est à vous. "
             "Entrez votre nom ci-dessous et que la bataille commence !"
         )
-        self.w6_instructions.setMinimumHeight(150)
+        self.w6_instructions = AccessibleBrowser(
+            text=description_text,
+            accessible_text=description_text,
+        )
+        self.w6_instructions.setMinimumHeight(180)
         layout.addWidget(self.w6_instructions)
 
         self.w6_name_input = QLineEdit()
