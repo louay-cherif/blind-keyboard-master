@@ -65,7 +65,10 @@ class AppFrontend(QWidget):
         """Page 0: Week selection"""
         page = QWidget()
         layout = QVBoxLayout()
-        layout.addWidget(QLabel("Choisissez votre semaine :"))
+        layout.addWidget(AccessibleLabel(
+            visual_text="Choisissez votre semaine :",
+            accessible_text="Choisissez votre semaine. Utilisez Tab et Entrée pour sélectionner.",
+        ))
         for i, week in enumerate(self.logic.weeks):
             btn = QPushButton(week["name"])
             btn.clicked.connect(lambda checked, idx=i: self.select_week(idx))
@@ -85,9 +88,10 @@ class AppFrontend(QWidget):
 
         layout = QVBoxLayout()
 
-        msg = QLineEdit("Êtes-vous sûr(e) de vouloir quitter l'application ?")
-        msg.setReadOnly(True)
-        msg.setAlignment(Qt.AlignCenter)
+        msg = AccessibleLabel(
+            visual_text="Êtes-vous sûr(e) de vouloir quitter l'application ?",
+            accessible_text="Êtes-vous sûr de vouloir quitter l'application ?",
+        )
         layout.addWidget(msg)
 
         btn_row = QHBoxLayout()
@@ -133,7 +137,10 @@ class AppFrontend(QWidget):
         btn_learn.clicked.connect(self.start_learning)
         btn_practice.clicked.connect(self.start_practice)
         btn_retour.clicked.connect(self.go_back_to_week_selection)
-        layout.addWidget(QLabel("IDENTIFICATION"))
+        layout.addWidget(AccessibleLabel(
+            visual_text="IDENTIFICATION",
+            accessible_text="Page d'identification. Entrez votre nom puis choisissez Apprendre ou Pratique.",
+        ))
         layout.addWidget(self.name_input)
         layout.addWidget(btn_learn)
         layout.addWidget(btn_practice)
@@ -146,15 +153,14 @@ class AppFrontend(QWidget):
         page = QWidget()
         layout = QVBoxLayout()
         
-        self.result_output = QLineEdit()
-        self.result_output.setReadOnly(True)
+        self.result_output = AccessibleLabel(visual_text="", accessible_text="")
         self.result_output.hide()
         
         # 1. مربع الكتابة أصبح هو الأول
         self.learn_input = QLineEdit()
         self.learn_input.textChanged.connect(self.check_learn_input)
         
-        # 2. Boîte d'affichage du caractère - AccessibleLabel pour que le lecteur d'écran
+        # 2. Boîte d'affichage du caractère  -  AccessibleLabel pour que le lecteur d'écran
         #    annonce le nom verbeux (ex. "q majuscule") tout en affichant juste le caractère
         self.char_display_box = AccessibleLabel(visual_text="", accessible_text="")
         # Remplacer le style par défaut pour conserver la grande police
@@ -194,7 +200,10 @@ class AppFrontend(QWidget):
         btn_letters.clicked.connect(lambda: self.start_game("LETTERS"))
         btn_words.clicked.connect(lambda: self.start_game("WORDS"))
         btn_back.clicked.connect(lambda: self.pages.setCurrentIndex(1))
-        layout.addWidget(QLabel("MODE PRATIQUE"))
+        layout.addWidget(AccessibleLabel(
+            visual_text="MODE PRATIQUE",
+            accessible_text="Mode pratique. Choisissez Pratique des Lettres ou Pratique des Mots.",
+        ))
         layout.addWidget(btn_letters)
         layout.addWidget(btn_words)
         layout.addWidget(btn_back)
@@ -210,7 +219,10 @@ class AppFrontend(QWidget):
         self.target_label.setStyleSheet("font-size: 100px; color: #0fecb0; font-weight: bold;")
         self.input_field = QLineEdit()
         self.input_field.textChanged.connect(self.check_input)
-        self.score_label = QLabel("Score: 0")
+        self.score_label = AccessibleLabel(
+            visual_text="Score : 0",
+            accessible_text="Score actuel : 0",
+        )
         btn_quit = QPushButton("Quitter")
         btn_quit.clicked.connect(self.stop_game)
         layout.addWidget(self.target_label)
@@ -357,7 +369,7 @@ class AppFrontend(QWidget):
         self.char_display_box.hide()  # Hide the display box on end screen
         self.char_display_box.update_text("FIN", "Fin de session")
         self.learn_label.setText("FIN")
-        self.result_output.setText("Session terminee.")
+        self.result_output.update_text("Session terminée.", "Session terminée. Appuyez sur OK pour revenir.")
         self.result_output.show()
         self.btn_ok.show()
         self.btn_ok.setFocus()
@@ -450,7 +462,10 @@ class AppFrontend(QWidget):
             winsound.Beep(1500, 100)
             self.logic.log_data(self.logic.target, "Correct")
             self.logic.score += 1
-            self.score_label.setText(f"Score: {self.logic.score}")
+            self.score_label.update_text(
+                f"Score : {self.logic.score}",
+                f"Score actuel : {self.logic.score}",
+            )
             self.next_round()
         elif result["should_clear"]:
             winsound.Beep(400, 200)
@@ -753,22 +768,26 @@ class AppFrontend(QWidget):
         page = QWidget()
         layout = QVBoxLayout()
         
-        # Title
-        title = QLabel("SEMAINE 6: DÉFI ULTIME")
-        title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("font-size: 32px; font-weight: bold; color: #e94560;")
+        title = AccessibleLabel(
+            visual_text="SEMAINE 6 : DÉFI ULTIME",
+            accessible_text="Semaine 6 : Défi Ultime. Entrez votre nom et appuyez sur C'est parti pour commencer.",
+        )
+        title.setStyleSheet(
+            "font-size: 32px; font-weight: bold; color: #e94560;"
+            "background-color: transparent; border: none;"
+        )
         layout.addWidget(title)
         
-        # Longue description du jeu - AccessibleBrowser pour le retour à la ligne et le lecteur d'écran
+        # Longue description du jeu  -  AccessibleBrowser pour le retour à la ligne et le lecteur d'écran
         description_text = (
-            "SEMAINE 6 - LE DÉFI ULTIME ! "
+            "SEMAINE 6  -  LE DÉFI ULTIME ! "
             "C'est le moment. Six modes légendaires vous séparent de la maîtrise totale du clavier. "
             "Conquérez le Warmup Gate, foncez dans le Combo Rush, affûtez votre précision dans la Precision Arena, "
             "enchaînez dans le Sentence Mode, survivez au Survival Gate, "
             "et déchaînez le chaos dans la Crazy Keyboard Party ! "
             "Chaque mode vaincu réduit la santé du Boss et vous rapporte des XP. "
             "Grimpez les rangs de Débutant jusqu'à Maître. "
-            "Atteignez 1500 XP et le Boss tombe - la VICTOIRE est à vous. "
+            "Atteignez 1500 XP et le Boss tombe  -  la VICTOIRE est à vous. "
             "Entrez votre nom ci-dessous et que la bataille commence !"
         )
         self.w6_instructions = AccessibleBrowser(
@@ -809,7 +828,7 @@ class AppFrontend(QWidget):
         
         # Import and launch Week 6 challenge with username.
         # Call start_challenge() immediately so Week6UI jumps straight to the
-        # battle page - Page 8 of the main app already served as the intro.
+        # battle page  -  Page 8 of the main app already served as the intro.
         from w6challenge import Week6UI
         self.w6_ui = Week6UI(self.logic, user_name=username, is_english=False)
         self.w6_ui.show()
