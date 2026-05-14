@@ -2,12 +2,17 @@ import sys
 import winsound
 import time
 import os
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, 
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
                              QLabel, QStackedWidget, QDialog, QApplication)
 from PyQt5.QtCore import Qt, QTimer, QUrl
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from weeks import Week4Logic
 from w6challenge import AccessibleBrowser, AccessibleLabel
+
+# Developer picture path
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_PICTURE_PATH = os.path.join(_BASE_DIR, "static", "developer_picture.jpeg")
 
 
 class AppFrontend(QWidget):
@@ -19,8 +24,8 @@ class AppFrontend(QWidget):
         self._base_logic = logic  # Keep original logic reference for Week4Logic initialization
         
         self.setWindowTitle("Adapted Informatics Initiative Official Keyboard typing app for visually impaired people")
-        self.resize(800, 600)
-        
+        self.setWindowState(Qt.WindowMaximized)
+
         # Timer for game mode
         self.timer = QTimer()
         self.timer.timeout.connect(self.time_out)
@@ -44,7 +49,7 @@ class AppFrontend(QWidget):
             QLineEdit { padding: 18px; background-color: #1a1a2e; color: #0fecb0; border: 2px solid #0fecb0; border-radius: 10px; text-align: center; }
             QLineEdit[readOnly="true"] { color: #f9d342; border-color: #f9d342; }
         """)
-        
+
         # Setup pages
         self.pages = QStackedWidget()
         self.setup_week_selection()
@@ -56,10 +61,39 @@ class AppFrontend(QWidget):
         self.setup_week4_game_page()
         self.setup_week4_end_page()
         self.setup_week6_identification_page()
-        
-        layout = QVBoxLayout()
-        layout.addWidget(self.pages)
-        self.setLayout(layout)
+
+        # ---- Watermark bar (shown on every page, outside the stacked widget) ----
+        watermark_bar = QHBoxLayout()
+        watermark_bar.setContentsMargins(8, 4, 8, 4)
+        watermark_bar.setSpacing(6)
+
+        # Small icon
+        wm_icon = QLabel()
+        wm_icon.setFocusPolicy(Qt.NoFocus)
+        if os.path.isfile(_PICTURE_PATH):
+            pix = QPixmap(_PICTURE_PATH).scaled(
+                28, 28, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            wm_icon.setPixmap(pix)
+        else:
+            wm_icon.setText("LC")
+            wm_icon.setStyleSheet("font-size: 12px; color: #555; background: transparent;")
+        watermark_bar.addWidget(wm_icon)
+
+        wm_text = QLabel("All rights Reserved to Louay Cherif (lead developer)")
+        wm_text.setFocusPolicy(Qt.NoFocus)
+        wm_text.setStyleSheet(
+            "font-size: 13px; color: #555555; background: transparent; border: none;"
+        )
+        watermark_bar.addWidget(wm_text)
+        watermark_bar.addStretch()
+
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        main_layout.addLayout(watermark_bar)
+        main_layout.addWidget(self.pages)
+        self.setLayout(main_layout)
 
     def setup_week_selection(self):
         """Page 0: Week selection"""
