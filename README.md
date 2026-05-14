@@ -10,3 +10,20 @@ Before using the application, make sure you have all the following installed on 
 wait for the dependencies to be successfully installed
 
 Please note that this app is tested with the screenreader NVDA, so support for other screenreaders is not guaranteed.
+
+
+# Blind Keyboard Master - keyboard learning app accessible for visually impaired people
+# Copyright (C) 2026 Louay Cherif
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
