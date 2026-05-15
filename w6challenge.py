@@ -356,9 +356,9 @@ class GenericTypingMode(QWidget):
         self.current_target    = self.get_random_target()
         self.target_start_time = time.time()
 
-        # Symbols/uppercase -> 3 s timeout; lowercase -> 2 s
+        # Symbols/uppercase -> 4 s timeout; lowercase only -> 2 s
         if self.current_target in symbol_pronounciation or self.current_target.isupper():
-            self.target_timeout = 3.0
+            self.target_timeout = 4.0
         else:
             self.target_timeout = 2.0
 
@@ -640,22 +640,16 @@ class ComboWelcomePage(QWidget):
             instructions = (
                 "Build your combo score through precision and survive increasing complexity!\n\n"
                 "SCORING MECHANICS:\n"
-                "- Correct answer: Doubles your current combo score\n"
-                "- Incorrect answer: Divides your score by 3 (rounded to 2 decimals)\n"
-                "- Timeout: Resets score back to 1\n"
-                "- Cap at 128: When your score reaches 128, it auto-converts to XP and resets to 1\n\n"
+                "Correct answer: Doubles your current combo score\n"
+                "Incorrect answer: Divides your score by 3\n"
+                "Timeout: Resets score\n\n"
                 "STAGE PROGRESSION:\n"
-                "• Stage 1 (5 min): Single characters\n"
-                "• Stage 2 (5 min): Two-character combos\n"
-                "• Stage 3 (5 min): Three-character combos\n"
-                "• Optional: Continue infinitely with longer combos for bonus rewards\n\n"
-                "XP CONVERSION:\n"
-                "After each correct answer, your combo score is converted to XP based on stage difficulty, "
-                "then resets to 1.\n"
-                "Stage 1: 0.1 XP per point | Stage 2: 0.2 XP per point | Stage 3: 0.4 XP per point\n\n"
-                "COMPLETION:\n"
-                "Complete Stage 3 with ≥70% accuracy to succeed and damage the boss.\n"
-                "Below 70%: Retry later. At or above 70%: +40 XP and -15% boss health!"
+                "Stage 1 (5 min): Single characters\n"
+                "Stage 2 (5 min): Two-character combos\n"
+                "Stage 3 (5 min): Three-character combos\n"
+                "Continue infinitely with longer combos for bonus rewards\n\n"
+                "OBJECTIVE:\n"
+                "Complete Stage 3 with at least 70% accuracy to win."
             )
             button_text = "I Am Ready"
         else:
@@ -664,22 +658,16 @@ class ComboWelcomePage(QWidget):
             instructions = (
                 "Construisez votre score de combo par la précision et survivez à la complexité croissante !\n\n"
                 "MÉCANIQUE DE NOTATION :\n"
-                "- Bonne réponse : Double votre score de combo actuel\n"
-                "- Mauvaise réponse : Divise votre score par 3 (arrondi à 2 décimales)\n"
-                "- Dépassement : Réinitialise le score à 1\n"
-                "- Plafond à 128 : Quand votre score atteint 128, il est automatiquement converti en XP et réinitialisé à 1\n\n"
+                "Bonne réponse : Double votre score de combo\n"
+                "Mauvaise réponse : Divise votre score par 3\n"
+                "Dépassement : Réinitialise le score\n\n"
                 "PROGRESSION PAR ÉTAPE :\n"
-                "• Étape 1 (5 min) : Caractères uniques\n"
-                "• Étape 2 (5 min) : Combos de deux caractères\n"
-                "• Étape 3 (5 min) : Combos de trois caractères\n"
-                "• Optionnel : Continuer indéfiniment avec des combos plus longs pour des récompenses bonus\n\n"
-                "CONVERSION XP :\n"
-                "Après chaque bonne réponse, votre score de combo est converti en XP selon la difficulté de l'étape, "
-                "puis réinitialisé à 1.\n"
-                "Étape 1 : 0,1 XP par point | Étape 2 : 0,2 XP par point | Étape 3 : 0,4 XP par point\n\n"
-                "ACHÈVEMENT :\n"
-                "Terminez l'étape 3 avec ≥70 % de précision pour réussir et endommager le boss.\n"
-                "Moins de 70 % : Réessayez plus tard. 70 % ou plus : +40 XP et -15 % de santé du boss !"
+                "Étape 1 (5 min) : Caractères uniques\n"
+                "Étape 2 (5 min) : Combos de deux caractères\n"
+                "Étape 3 (5 min) : Combos de trois caractères\n"
+                "Continuez indéfiniment avec des combos plus longs pour des récompenses bonus\n\n"
+                "OBJECTIF :\n"
+                "Terminez l'étape 3 avec au moins 70 % de précision pour gagner."
             )
             button_text = "Je Suis Prêt"
 
@@ -738,8 +726,8 @@ class ComboTypingMode(GenericTypingMode):
         self.current_stage = 1
         self.stage_start_time = None
         self.stage_duration = 300  # 5 minutes per stage
-        self.combo_score = 1.0
-        self.highest_combo = 1.0
+        self.combo_score = 0.01  # Start at 0.01 to prevent XP farming
+        self.highest_combo = 0.01
         self.xp_conversion_rates = {1: 0.1, 2: 0.2, 3: 0.4}  # Stage -> multiplier
         self.total_session_xp = 0.0
         self.session_complete = False
@@ -756,24 +744,24 @@ class ComboTypingMode(GenericTypingMode):
             mode_label_text = "COMBO RUSH  -  Stage-Based Progression"
             instructions_text = (
                 "Type the combo as it appears. Build your streak and maximize score!\n"
-                "Correct: 2x score | Incorrect: ÷3 | Timeout: Reset to 1"
+                "Correct: 2x score | Incorrect: ÷3 | Timeout: Reset"
             )
             xp_text = "XP Balance: 0"
-            stage_text = "Stage: 1 – Single Character"
-            score_text = "Combo Score: 1.0"
+            stage_text = "Stage: 1 - Single Character"
+            score_text = "Combo Score: 0.01"
             timer_text = "Stage Time: 5:00"
             button_text = "Leave and Go Back to Challenge Battle"
         else:
-            mode_label_text = "COMBO RUSH  -  Progression par Étape"
+            mode_label_text = "COMBO RUSH  -  Progression par Etape"
             instructions_text = (
-                "Tapez le combo au fur et à mesure. Construisez votre série et maximisez le score !\n"
-                "Correct : 2x score | Incorrect : ÷3 | Dépassement : Réinitialiser à 1"
+                "Tapez le combo au fur et a mesure. Construisez votre serie et maximisez le score !\n"
+                "Correct : 2x score | Incorrect : ÷3 | Depassement : Reinitialiser"
             )
             xp_text = "Solde XP : 0"
-            stage_text = "Étape : 1 – Caractère Unique"
-            score_text = "Score Combo : 1.0"
-            timer_text = "Temps d'Étape : 5:00"
-            button_text = "Quitter et Retourner au Combat de Défi"
+            stage_text = "Etape : 1 - Caractere Unique"
+            score_text = "Score Combo : 0.01"
+            timer_text = "Temps d'Etape : 5:00"
+            button_text = "Quitter et Retourner au Combat de Defi"
 
         mode_title = AccessibleLabel(
             visual_text=mode_label_text, accessible_text=mode_label_text
@@ -844,8 +832,8 @@ class ComboTypingMode(GenericTypingMode):
         self.session_start_time = time.time()
         self.stage_start_time = time.time()
         self.current_stage = 1
-        self.combo_score = 1.0
-        self.highest_combo = 1.0
+        self.combo_score = 0.01
+        self.highest_combo = 0.01
         self.total_session_xp = 0.0
         self.correct_count = 0
         self.incorrect_count = 0
@@ -922,22 +910,39 @@ class ComboTypingMode(GenericTypingMode):
         self.current_target = self.get_random_target()
         self.target_start_time = time.time()
 
-        # Constant timeout for fair difficulty: 3 seconds for all combos
-        self.target_timeout = 3.0
+        # Dynamic timeout: 4 sec for symbols/uppercase, 2 sec for lowercase only
+        has_symbol = any(char in symbol_pronounciation for char in self.current_target)
+        has_uppercase = any(char.isupper() for char in self.current_target)
+        
+        if has_symbol or has_uppercase:
+            self.target_timeout = 4.0
+        else:
+            self.target_timeout = 2.0
 
         # Build announcement
         announcement = self._get_combo_announcement(self.current_target)
         self.target_display.update_text(self.current_target, announcement)
 
-        if self.base_logic.speaker:
-            self.base_logic.speaker.output(announcement)
-
         self.input_field.blockSignals(True)
         self.input_field.clear()
         self.input_field.blockSignals(False)
-        self.input_field.setFocus()
 
-        self.target_timer.start(int(self.target_timeout * 1000))
+        # For Stage 1: immediate timer start
+        # For Stage 2+: disable input during announcement, then enable with beep
+        if self.current_stage == 1:
+            self.input_field.setFocus()
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(announcement)
+            self.target_timer.start(int(self.target_timeout * 1000))
+        else:
+            # Disable input during pronunciation phase
+            self.input_field.setEnabled(False)
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(announcement)
+            # Calculate delay based on announcement length (like word practice mode)
+            announcement_length = len(announcement)
+            spelling_delay = announcement_length * 60 + 400
+            QTimer.singleShot(spelling_delay, self._start_combo_timer)
 
     def _get_combo_announcement(self, combo):
         """Convert combo string to screen reader announcement."""
@@ -950,6 +955,18 @@ class ComboTypingMode(GenericTypingMode):
             else:
                 parts.append(char)
         return ", ".join(parts)
+
+    def _start_combo_timer(self):
+        """Start the combo timer with beep signal (for stages 2+)."""
+        # Update target_start_time to now so timer duration is accurate
+        self.target_start_time = time.time()
+        # Play start signal beep (1000Hz, 150ms like word practice mode)
+        winsound.Beep(1000, 150)
+        # Enable input and set focus
+        self.input_field.setEnabled(True)
+        self.input_field.setFocus()
+        # Start the timer
+        self.target_timer.start(int(self.target_timeout * 1000))
 
     def _on_input_changed(self, text):
         """Handle typing input - check for combo match."""
@@ -969,13 +986,13 @@ class ComboTypingMode(GenericTypingMode):
             # Double the combo score, rounded to 2dp to avoid float drift
             self.combo_score = round(self.combo_score * 2, 2)
             
-            # Cap at 128 - auto-convert integer part to XP and reset to 1
+            # Cap at 128 - auto-convert integer part to XP and reset to 0.01
             if self.combo_score >= 128:
                 multiplier = self.get_xp_multiplier(self.current_stage)
                 xp_gained = round(int(self.combo_score) * multiplier, 1)
                 self.total_session_xp += xp_gained
                 self.xp_earned = self.total_session_xp
-                self.combo_score = 1.0
+                self.combo_score = 0.01
                 if self.base_logic.speaker:
                     msg = (
                         f"Combo cap! {xp_gained} XP converted."
@@ -993,6 +1010,7 @@ class ComboTypingMode(GenericTypingMode):
             
             self._update_displays()
             self._next_target()
+            return
 
         elif len(text) > len(self.current_target):
             # User typed more characters than the target - mark as incorrect
@@ -1010,18 +1028,16 @@ class ComboTypingMode(GenericTypingMode):
             self._log_combo_attempt(self.current_target, "incorrect", None, self.combo_score)
             
             self._update_displays()
-            self.input_field.blockSignals(True)
-            self.input_field.clear()
-            self.input_field.blockSignals(False)
-            self._next_target()
+            self._next_target()  # Immediately move to next target
+            return
 
     def _on_target_timeout(self):
-        """Handle timeout - reset score to 1."""
+        """Handle timeout - reset score to 0.01."""
         winsound.Beep(600, 300)
         self.timeout_count += 1
         
-        # Reset score to 1 on timeout
-        self.combo_score = 1.0
+        # Reset score to 0.01 on timeout
+        self.combo_score = 0.01
         
         self._log_combo_attempt(self.current_target, "timeout", None, self.combo_score)
         
@@ -1048,11 +1064,16 @@ class ComboTypingMode(GenericTypingMode):
              f"{m} minutes {s} secondes restantes dans cette étape")
         self.timer_label.update_text(v, a)
 
+    def _convert_mini_xp(self):
+        """Convert combo score to XP when it reaches 128 mid-stage."""
+        multiplier = self.get_xp_multiplier(self.current_stage)
+        xp_gained = round(int(self.combo_score) * multiplier, 1)
+        self.total_session_xp += xp_gained
+        self.xp_earned = self.total_session_xp
+        self._update_displays()
+
     def _convert_stage_xp(self):
-        """Convert current combo score to XP at end of stage.
-        Only the integer part of the score is used - fractional points
-        below 1 are ignored to keep XP clean to 1 decimal place.
-        """
+        """Convert current combo score to XP at end of stage."""
         multiplier = self.get_xp_multiplier(self.current_stage)
         xp_gained = round(int(self.combo_score) * multiplier, 1)
         self.total_session_xp += xp_gained
@@ -1065,7 +1086,7 @@ class ComboTypingMode(GenericTypingMode):
             # Transition from mandatory stages (1→2, 2→3)
             self.current_stage += 1
             self.stage_start_time = time.time()
-            self.combo_score = 1.0  # Reset score for new stage
+            self.combo_score = 0.01  # Reset score for new stage
             
             stage_names = {
                 1: ("Stage 1 – Single Character", "Étape 1 – Caractère Unique"),
@@ -1182,9 +1203,9 @@ class ComboTypingMode(GenericTypingMode):
             logic.boss_health = max(0, logic.boss_health - 5)
 
         # Move to next bonus stage
-        self.combo_score = 1.0  # Reset for new stage
+        self.combo_score = 0.01  # Reset for new stage
         self.current_stage += 1
-        self.highest_combo = 1.0  # Reset highest for new stage
+        self.highest_combo = 0.01  # Reset highest for new stage
         self.stage_start_time = time.time()
         
         stage_names = {
@@ -1345,9 +1366,9 @@ class ComboTypingMode(GenericTypingMode):
 
     def _update_displays(self):
         """Update all display labels."""
-        # XP label
-        v = f"XP Balance: {int(self.xp_earned)}" if self.is_english else f"Solde XP : {int(self.xp_earned)}"
-        a = f"{int(self.xp_earned)} XP earned" if self.is_english else f"{int(self.xp_earned)} XP gagnés"
+        # XP label with 1 decimal place
+        v = f"XP Balance: {self.xp_earned:.1f}" if self.is_english else f"Solde XP : {self.xp_earned:.1f}"
+        a = f"{self.xp_earned:.1f} XP earned" if self.is_english else f"{self.xp_earned:.1f} XP gagnés"
         self.xp_label.update_text(v, a)
 
         # Combo score label
@@ -1356,16 +1377,8 @@ class ComboTypingMode(GenericTypingMode):
         self.combo_score_label.update_text(v, a)
 
     def get_xp_multiplier(self, stage):
-        """Get XP conversion multiplier for a stage."""
-        if stage == 1:
-            return 0.1
-        elif stage == 2:
-            return 0.2
-        elif stage == 3:
-            return 0.4
-        else:
-            # Bonus stages scale: 0.4 + (stage - 3) * 0.1
-            return 0.4 + (stage - 3) * 0.1
+        """Get XP conversion multiplier for a stage. Linear scaling: stage / 10."""
+        return stage / 10.0
 
     def _update_challenge_state_success(self):
         """Update challenge state after successful Combo Mode completion."""
