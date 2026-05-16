@@ -214,6 +214,7 @@ symbol_pronounciation = {
     ".": "point",
     "?": "point d'interrogation",
     '"': "guillemet",
+    "'": "apostrophe",
     "é": "e accent aigu",
     "ç": "c cedille",
     "è": "e accent grave",
@@ -225,15 +226,15 @@ symbol_pronounciation = {
 # week 5 structure
 week5 = {
     "name": "Semaine 5: Majuscules et Symboles",
-    "steps": ["QSDFGHJKLM", "AZERTYUIOP", "WXCVBN", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", ",:\\!.?\"éçè(à)"],
+    "steps": ["QSDFGHJKLM", "AZERTYUIOP", "WXCVBN", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", ",:'!.?\"éçè(à)"],
     "practice_letters": [
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ",  # Majuscules only
         "abcdefghijklmnopqrstuvwxyz",  # Minuscules only
-        ",:\\!.?\"éçè(à)",  # Symbols only
+        ",:'!.?\"éçè(à)",  # Symbols only
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",  # Mixed case letters
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz,:\\!.?\"éçè(à)",  # All combined
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz,:'!.?\"éçè(à)",  # All combined
     ],
-    "symbols": ",:\\!.?\"éçè(à)",
+    "symbols": ",:'!.?\"éçè(à)",
     "words": w5words,
     "learning_flow": [
         # 10 minutes random timed (1.5 secs each) for all letters across 3 rows
@@ -261,13 +262,13 @@ week5 = {
         {"mode": "random", "chars": "QSDFGHJKLMAZERTYUIOPWXCVBN", "duration": 300},
         
         # Learn the punctuation symbols
-        {"mode": "learn", "chars": ",:\\!.?\"éçè(à)"},
+        {"mode": "learn", "chars": ",:'!.?\"éçè(à)"},
         
         # 5 minutes random on symbols
-        {"mode": "random", "chars": ",:\\!.?\"éçè(à)", "duration": 300},
+        {"mode": "random", "chars": ",:'!.?\"éçè(à)", "duration": 300},
         
         # Final 100-count random mixing majuscules and symbols
-        {"mode": "random", "chars": "QSDFGHJKLMAZERTYUIOPWXCVBN,:\\!.?\"éçè(à)", "count": 100},
+        {"mode": "random", "chars": "QSDFGHJKLMAZERTYUIOPWXCVBN,:'!.?\"éçè(à)", "count": 100},
     ],
 }
 
