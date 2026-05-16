@@ -1012,8 +1012,8 @@ class ComboTypingMode(GenericTypingMode):
             self._next_target()
             return
 
-        elif len(text) > len(self.current_target):
-            # User typed more characters than the target - mark as incorrect
+        elif len(text) >= len(self.current_target) or (text and text != self.current_target[:len(text)]):
+            # Incorrect if: typed past target length, OR typed text doesn't match target start
             self.target_timer.stop()
             winsound.Beep(400, 200)
             self.incorrect_count += 1
@@ -1143,7 +1143,7 @@ class ComboTypingMode(GenericTypingMode):
             title = f"STAGE {self.current_stage} COMPLETE"
             stats_text = (
                 f"Stage Accuracy: {self.session_accuracy:.1f}%\n"
-                f"Highest Combo This Stage: {self.highest_combo:.1f}\n"
+                f"Highest Combo This Stage: {self.highest_combo:.2f}\n"
                 f"Total Session Accuracy: {self.session_accuracy:.1f}%\n\n"
                 f"Bonus Stage Reward: +20 XP and -5% Boss Health earned.\n"
                 f"Continue to Stage {self.current_stage + 1} for more rewards?"
@@ -1154,7 +1154,7 @@ class ComboTypingMode(GenericTypingMode):
             title = f"ÉTAPE {self.current_stage} COMPLÈTE"
             stats_text = (
                 f"Précision de l'Étape : {self.session_accuracy:.1f} %\n"
-                f"Combo le Plus Élevé de cette Étape : {self.highest_combo:.1f}\n"
+                f"Combo le Plus Élevé de cette Étape : {self.highest_combo:.2f}\n"
                 f"Précision Totale de la Session : {self.session_accuracy:.1f} %\n\n"
                 f"Récompense Étape Bonus : +20 XP et -5 % santé du Boss gagnés.\n"
                 f"Continuer à l'étape {self.current_stage + 1} pour plus de récompenses ?"
@@ -1298,7 +1298,7 @@ class ComboTypingMode(GenericTypingMode):
                 f"Incorrect Answers: {self.incorrect_count}\n"
                 f"Timeouts: {self.timeout_count}\n"
                 f"Final Accuracy: {self.session_accuracy:.1f}%\n"
-                f"Highest Combo Score: {self.highest_combo:.1f}\n"
+                f"Highest Combo Score: {self.highest_combo:.2f}\n"
                 f"Total XP Earned: {int(self.total_session_xp)}\n\n"
                 f"You passed! +40 XP and -15% Boss Health awarded.\n"
                 f"Continue for bonus stages with longer combos and more XP?"
@@ -1312,7 +1312,7 @@ class ComboTypingMode(GenericTypingMode):
                 f"Mauvaises Réponses : {self.incorrect_count}\n"
                 f"Dépassements : {self.timeout_count}\n"
                 f"Précision Finale : {self.session_accuracy:.1f} %\n"
-                f"Score Combo le Plus Élevé : {self.highest_combo:.1f}\n"
+                f"Score Combo le Plus Élevé : {self.highest_combo:.2f}\n"
                 f"XP Total Gagné : {int(self.total_session_xp)}\n\n"
                 f"Vous avez réussi ! +40 XP et -15 % santé du Boss accordés.\n"
                 f"Continuer pour les étapes bonus avec des combos plus longs et plus de XP ?"
@@ -1371,9 +1371,9 @@ class ComboTypingMode(GenericTypingMode):
         a = f"{self.xp_earned:.1f} XP earned" if self.is_english else f"{self.xp_earned:.1f} XP gagnés"
         self.xp_label.update_text(v, a)
 
-        # Combo score label
-        v = f"Combo Score: {self.combo_score:.1f}" if self.is_english else f"Score Combo : {self.combo_score:.1f}"
-        a = f"Current combo score is {self.combo_score:.1f}" if self.is_english else f"Le score de combo actuel est {self.combo_score:.1f}"
+        # Combo score label with 2 decimal places
+        v = f"Combo Score: {self.combo_score:.2f}" if self.is_english else f"Score Combo : {self.combo_score:.2f}"
+        a = f"Current combo score is {self.combo_score:.2f}" if self.is_english else f"Le score de combo actuel est {self.combo_score:.2f}"
         self.combo_score_label.update_text(v, a)
 
     def get_xp_multiplier(self, stage):
@@ -1414,7 +1414,7 @@ class ComboTypingMode(GenericTypingMode):
                 f"Correct Answers: {self.correct_count}\n"
                 f"Incorrect Answers: {self.incorrect_count}\n"
                 f"Timeouts: {self.timeout_count}\n"
-                f"Highest Combo: {self.highest_combo:.1f}\n"
+                f"Highest Combo: {self.highest_combo:.2f}\n"
                 f"XP Earned: {int(self.xp_earned)}\n"
                 f"Stages Completed: {self.current_stage}\n\n"
                 f"Completion Bonus: +40 XP | Boss Damage: -15%"
@@ -1427,7 +1427,7 @@ class ComboTypingMode(GenericTypingMode):
                 f"Bonnes Réponses : {self.correct_count}\n"
                 f"Mauvaises Réponses : {self.incorrect_count}\n"
                 f"Dépassements : {self.timeout_count}\n"
-                f"Combo le Plus Élevé : {self.highest_combo:.1f}\n"
+                f"Combo le Plus Élevé : {self.highest_combo:.2f}\n"
                 f"XP Gagné : {int(self.xp_earned)}\n"
                 f"Étapes Complétées : {self.current_stage}\n\n"
                 f"Bonus d'Achèvement : +40 XP | Dommage Boss : -15 %"
