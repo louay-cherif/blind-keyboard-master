@@ -29,8 +29,8 @@ import winsound
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
                              QLabel, QStackedWidget, QDialog, QApplication, QMessageBox,
                              QTextBrowser)
-from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QPixmap
 from weeks import symbol_pronounciation
 
 
@@ -621,51 +621,164 @@ class GenericTypingMode(QWidget):
         event.accept()
 
 
-class PrecisionArenaMode(GenericTypingMode):
-    """Custom Precision Arena session for Week 6.
+# ============= COMBO MODE WELCOME PAGE =============
 
-    This mode reuses the accessible typing UI from GenericTypingMode but
-    replaces all scoring, timing, generation, and completion logic.
-    """
+class ComboWelcomePage(QWidget):
+    """Welcome screen explaining Combo Mode mechanics before the challenge begins."""
 
-    def __init__(self, base_logic, mode_name="Precision Arena",
-                 is_english=True, parent=None):
-        super().__init__(base_logic, mode_name=mode_name,
-                         is_english=is_english, parent=parent)
-        self.session_duration   = 420
-        self.session_elapsed    = 0
-        self.correct_chars      = 0
-        self.incorrect_chars    = 0
-        self.current_phase      = "random"
-        self.phase_weights_built = False
-        self.session_letter_stats = {}
-        self.target_history_weights = {}
-        self.precision_csv_path  = None
-        self.precision_history_path = None
-        self.warmup_history_path = None
-        self._init_precision_paths()
+    def __init__(self, parent, is_english=True):
+        super().__init__()
+        self.parent_challenge = parent
+        self.is_english = is_english
+        self._setup_ui()
 
     def _setup_ui(self):
         layout = QVBoxLayout()
 
         if self.is_english:
-            title_text = "PRECISION ARENA  -  Accuracy Marathon"
-            instructions_text = (
-                "7 minutes of nonstop typing focused on accuracy and realistic speed.\n"
-                "The first 4 minutes are random, the final 3 minutes adapt to your weak letters.\n"
-                "No timeouts are used. Type the target and move on immediately."
+            title_text = "COMBO RUSH  -  Stage-Based Multiplier Challenge"
+            welcome_text = "Welcome to Combo Mode"
+            instructions = (
+                "Build your combo score through precision and survive increasing complexity!\n\n"
+                "SCORING MECHANICS:\n"
+                "- Correct answer: Doubles your current combo score\n"
+                "- Incorrect answer: Divides your score by 3 (rounded to 2 decimals)\n"
+                "- Timeout: Resets score back to 1\n"
+                "- Cap at 128: When your score reaches 128, it auto-converts to XP and resets to 1\n\n"
+                "STAGE PROGRESSION:\n"
+                "• Stage 1 (5 min): Single characters\n"
+                "• Stage 2 (5 min): Two-character combos\n"
+                "• Stage 3 (5 min): Three-character combos\n"
+                "• Optional: Continue infinitely with longer combos for bonus rewards\n\n"
+                "XP CONVERSION:\n"
+                "After each correct answer, your combo score is converted to XP based on stage difficulty, "
+                "then resets to 1.\n"
+                "Stage 1: 0.1 XP per point | Stage 2: 0.2 XP per point | Stage 3: 0.4 XP per point\n\n"
+                "COMPLETION:\n"
+                "Complete Stage 3 with ≥70% accuracy to succeed and damage the boss.\n"
+                "Below 70%: Retry later. At or above 70%: +40 XP and -15% boss health!"
             )
+            button_text = "I Am Ready"
+        else:
+            title_text = "COMBO RUSH  -  Défi de Multiplicateur par Étape"
+            welcome_text = "Bienvenue au Mode Combo"
+            instructions = (
+                "Construisez votre score de combo par la précision et survivez à la complexité croissante !\n\n"
+                "MÉCANIQUE DE NOTATION :\n"
+                "- Bonne réponse : Double votre score de combo actuel\n"
+                "- Mauvaise réponse : Divise votre score par 3 (arrondi à 2 décimales)\n"
+                "- Dépassement : Réinitialise le score à 1\n"
+                "- Plafond à 128 : Quand votre score atteint 128, il est automatiquement converti en XP et réinitialisé à 1\n\n"
+                "PROGRESSION PAR ÉTAPE :\n"
+                "• Étape 1 (5 min) : Caractères uniques\n"
+                "• Étape 2 (5 min) : Combos de deux caractères\n"
+                "• Étape 3 (5 min) : Combos de trois caractères\n"
+                "• Optionnel : Continuer indéfiniment avec des combos plus longs pour des récompenses bonus\n\n"
+                "CONVERSION XP :\n"
+                "Après chaque bonne réponse, votre score de combo est converti en XP selon la difficulté de l'étape, "
+                "puis réinitialisé à 1.\n"
+                "Étape 1 : 0,1 XP par point | Étape 2 : 0,2 XP par point | Étape 3 : 0,4 XP par point\n\n"
+                "ACHÈVEMENT :\n"
+                "Terminez l'étape 3 avec ≥70 % de précision pour réussir et endommager le boss.\n"
+                "Moins de 70 % : Réessayez plus tard. 70 % ou plus : +40 XP et -15 % de santé du boss !"
+            )
+            button_text = "Je Suis Prêt"
+
+        title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
+        title.setStyleSheet(
+            "font-size: 26px; font-weight: bold; color: #0fecb0;"
+            "background-color: transparent; border: none; padding: 8px;"
+        )
+        layout.addWidget(title)
+
+        welcome = AccessibleLabel(visual_text=welcome_text, accessible_text=welcome_text)
+        welcome.setStyleSheet(
+            "font-size: 18px; font-weight: bold; color: #e94560;"
+            "background-color: transparent; border: none; padding: 4px;"
+        )
+        layout.addWidget(welcome)
+
+        inst_field = AccessibleBrowser(text=instructions, accessible_text=instructions)
+        inst_field.setMinimumHeight(300)
+        layout.addWidget(inst_field)
+
+        btn_ready = QPushButton(button_text)
+        btn_ready.clicked.connect(self._launch)
+        layout.addWidget(btn_ready)
+
+        layout.addStretch()
+        self.setLayout(layout)
+
+    def _launch(self):
+        if hasattr(self.parent_challenge, 'launch_combo_session'):
+            self.parent_challenge.launch_combo_session()
+        self.close()
+
+
+# ============= COMBO MODE TYPING SESSION =============
+
+class ComboTypingMode(GenericTypingMode):
+    """
+    Multi-stage Combo Mode with progression-based infinite challenge.
+    Extends GenericTypingMode with stage progression, combo scoring, and XP conversion.
+    """
+
+    def __init__(self, base_logic, is_english=True, parent=None):
+        # Initialize parent but override session_duration
+        super().__init__(
+            base_logic,
+            mode_name="Combo Rush",
+            is_english=is_english,
+            parent=parent
+        )
+        
+        # Override for Combo Mode
+        self.session_duration = 999999  # Controlled by stage transitions instead
+        
+        # Combo-specific state
+        self.current_stage = 1
+        self.stage_start_time = None
+        self.stage_duration = 300  # 5 minutes per stage
+        self.combo_score = 1.0
+        self.highest_combo = 1.0
+        self.xp_conversion_rates = {1: 0.1, 2: 0.2, 3: 0.4}  # Stage -> multiplier
+        self.total_session_xp = 0.0
+        self.session_complete = False
+        self.continue_challenge = False
+        self.combo_csv_path = None
+        self.session_accuracy = 0.0
+        self.failed_mode = False
+        
+    def _setup_ui(self):
+        """Override parent UI to include combo-specific indicators."""
+        layout = QVBoxLayout()
+
+        if self.is_english:
+            mode_label_text = "COMBO RUSH  -  Stage-Based Progression"
+            instructions_text = (
+                "Type the combo as it appears. Build your streak and maximize score!\n"
+                "Correct: 2x score | Incorrect: ÷3 | Timeout: Reset to 1"
+            )
+            xp_text = "XP Balance: 0"
+            stage_text = "Stage: 1 - Single Character"
+            score_text = "Combo Score: 1.0"
+            timer_text = "Stage Time: 5:00"
             button_text = "Leave and Go Back to Challenge Battle"
         else:
-            title_text = "PRECISION ARENA  -  Marathon de Précision"
+            mode_label_text = "COMBO RUSH  -  Progression par Étape"
             instructions_text = (
-                "7 minutes de frappe continue axées sur la précision et la vitesse réelle.\n"
-                "Les 4 premières minutes sont aléatoires, les 3 dernières s'adaptent à vos lettres faibles.\n"
-                "Pas de dépassement de temps. Tapez la cible et passez immédiatement à la suivante."
+                "Tapez le combo au fur et à mesure. Construisez votre série et maximisez le score !\n"
+                "Correct : 2x score | Incorrect : ÷3 | Dépassement : Réinitialiser à 1"
             )
+            xp_text = "Solde XP : 0"
+            stage_text = "Etape : 1 - Caractere Unique"
+            score_text = "Score Combo : 1.0"
+            timer_text = "Temps d'Étape : 5:00"
             button_text = "Quitter et Retourner au Combat de Défi"
 
-        mode_title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
+        mode_title = AccessibleLabel(
+            visual_text=mode_label_text, accessible_text=mode_label_text
+        )
         mode_title.setStyleSheet(
             "font-size: 24px; font-weight: bold; color: #0fecb0;"
             "background-color: transparent; border: none; padding: 6px;"
@@ -675,47 +788,48 @@ class PrecisionArenaMode(GenericTypingMode):
         self.instructions_display = AccessibleBrowser(
             text=instructions_text, accessible_text=instructions_text
         )
-        self.instructions_display.setMinimumHeight(100)
+        self.instructions_display.setMinimumHeight(70)
         layout.addWidget(self.instructions_display)
 
-        stats_layout = QHBoxLayout()
-        self.correct_label = AccessibleLabel(
-            visual_text="Correct Chars: 0",
-            accessible_text="Correct characters: 0",
+        # Stats row 1: XP and Stage
+        stats_layout1 = QHBoxLayout()
+        self.xp_label = AccessibleLabel(visual_text=xp_text, accessible_text=xp_text)
+        stats_layout1.addWidget(self.xp_label)
+        
+        self.stage_label = AccessibleLabel(
+            visual_text=stage_text, 
+            accessible_text=stage_text
         )
-        stats_layout.addWidget(self.correct_label)
+        stats_layout1.addWidget(self.stage_label)
+        layout.addLayout(stats_layout1)
 
-        self.incorrect_label = AccessibleLabel(
-            visual_text="Incorrect Chars: 0",
-            accessible_text="Incorrect characters: 0",
+        # Stats row 2: Combo score and timer
+        stats_layout2 = QHBoxLayout()
+        self.combo_score_label = AccessibleLabel(
+            visual_text=score_text,
+            accessible_text=score_text
         )
-        stats_layout.addWidget(self.incorrect_label)
-
-        self.accuracy_label = AccessibleLabel(
-            visual_text="Accuracy: ?",
-            accessible_text="Accuracy is hidden until adaptive mode.",
-        )
-        stats_layout.addWidget(self.accuracy_label)
-
+        stats_layout2.addWidget(self.combo_score_label)
+        
         self.timer_label = AccessibleLabel(
-            visual_text="Remaining: 7:00",
-            accessible_text="7 minutes remaining",
+            visual_text=timer_text, accessible_text=timer_text
         )
-        stats_layout.addWidget(self.timer_label)
-        layout.addLayout(stats_layout)
+        stats_layout2.addWidget(self.timer_label)
+        layout.addLayout(stats_layout2)
 
+        # Target display - large combo text
         self.target_display = AccessibleLabel(
-            visual_text="",
-            accessible_text="Waiting for session to start",
+            visual_text="", accessible_text="Waiting for stage to start"
         )
         self.target_display.setStyleSheet(
-            "font-size: 120px; color: #f9d342;"
+            "font-size: 100px; color: #f9d342;"
             "border: 3px solid #f9d342; border-radius: 10px;"
             "background-color: #1a1a2e; padding: 8px;"
             "min-height: 160px;"
         )
         layout.addWidget(self.target_display)
 
+        # Typing input
         self.input_field = QLineEdit()
         self.input_field.textChanged.connect(self._on_input_changed)
         layout.addWidget(self.input_field)
@@ -727,282 +841,948 @@ class PrecisionArenaMode(GenericTypingMode):
         self.setLayout(layout)
 
     def start_session(self):
-        self.session_elapsed     = 0
-        self.correct_chars       = 0
-        self.incorrect_chars     = 0
-        self.current_phase       = "random"
-        self.phase_weights_built = False
-        self.session_letter_stats = {}
-        self._init_precision_paths()
-        self._init_precision_csv()
-        self._refresh_stats()
-        self._refresh_timer_display()
+        """Start the Combo Mode challenge with Stage 1."""
+        self.session_start_time = time.time()
+        self.stage_start_time = time.time()
+        self.current_stage = 1
+        self.combo_score = 1.0
+        self.highest_combo = 1.0
+        self.total_session_xp = 0.0
+        self.correct_count = 0
+        self.incorrect_count = 0
+        self.timeout_count = 0
+        self.session_accuracy = 0.0
+
+        self._init_combo_csv()
+        self.session_timer.start(1000)
         self._next_target()
 
         if self.base_logic.speaker:
             msg = (
-                "Precision Arena started. Focus on accuracy and speed!"
+                f"Combo Mode started. Stage 1 begins. Type the character as it appears!"
                 if self.is_english else
-                "Precision Arena démarrée. Concentrez-vous sur la précision et la vitesse !"
+                f"Mode Combo lancé. L'étape 1 commence. Tapez le caractère au fur et à mesure !"
             )
             self.base_logic.speaker.output(msg)
 
-    def _init_precision_paths(self):
+    def _init_combo_csv(self):
+        """Initialize CSV for detailed combo session logging."""
         clean_name = self.base_logic.get_clean_username()
         user_dir = os.path.join(self.base_logic.data_dir, clean_name)
         os.makedirs(user_dir, exist_ok=True)
-        self.precision_csv_path = os.path.join(
-            user_dir, f"{clean_name}_Precision_Arena_Session.csv"
+        self.combo_csv_path = os.path.join(
+            user_dir, f"{clean_name}_Combo_Session_{int(time.time())}.csv"
         )
-        self.precision_history_path = os.path.join(
-            user_dir, f"{clean_name}_Precision_Arena_History.csv"
+        try:
+            with open(self.combo_csv_path, 'w', newline='', encoding='utf-8') as f:
+                csv.writer(f).writerow([
+                    "Timestamp", "Generated Combo", "Result Status", "Response Time (s)",
+                    "Stage", "Current Combo Score"
+                ])
+        except Exception:
+            pass
+
+    def _log_combo_attempt(self, combo, status, response_time, score_after_action):
+        """Log a combo attempt to CSV.
+        
+        Args:
+            combo: The generated combo string
+            status: "correct", "incorrect", or "timeout"
+            response_time: Time taken (only for correct attempts)
+            score_after_action: Combo score AFTER this action is applied
+        """
+        if not self.combo_csv_path:
+            return
+        try:
+            with open(self.combo_csv_path, 'a', newline='', encoding='utf-8') as f:
+                csv.writer(f).writerow([
+                    time.strftime("%Y-%m-%d %H:%M:%S"),
+                    combo,
+                    status,
+                    round(response_time, 3) if status == "correct" else "!",
+                    self.current_stage,
+                    round(score_after_action, 2),
+                ])
+        except Exception:
+            pass
+
+    def get_random_target(self):
+        """Override parent to generate combos based on current stage."""
+        lowercase = "abcdefghijklmnopqrstuvwxyz"
+        uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        symbols = "".join(symbol_pronounciation.keys())
+        char_pool = lowercase + uppercase + symbols
+
+        combo_length = min(self.current_stage, 10)  # Stage 1=1, Stage 2=2, etc, max 10 chars
+        combo = "".join(random.choice(char_pool) for _ in range(combo_length))
+        return combo
+
+    def _next_target(self):
+        """Generate next combo and set up timeout."""
+        self.target_timer.stop()
+        self.current_target = self.get_random_target()
+        self.target_start_time = time.time()
+
+        # Constant 3-second timeout for all combos
+        self.target_timeout = 3.0
+
+        announcement = self._get_combo_announcement(self.current_target)
+        self.target_display.update_text(self.current_target, announcement)
+
+        self.input_field.blockSignals(True)
+        self.input_field.clear()
+        self.input_field.blockSignals(False)
+
+        if self.current_stage == 1:
+            # Single char: announce and enable input immediately
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(announcement)
+            self.input_field.setEnabled(True)
+            self.input_field.setFocus()
+            self.target_timer.start(int(self.target_timeout * 1000))
+        else:
+            # Multi-char: disable input during announcement so screen reader
+            # is not interrupted by focus shift. Enable with beep after delay,
+            # matching standard word practice behaviour in existing weeks.
+            self.input_field.setEnabled(False)
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(announcement)
+            # Delay: roughly 60ms per character of announcement text + 400ms buffer
+            delay = len(announcement) * 60 + 400
+            QTimer.singleShot(delay, self._enable_combo_input)
+
+    def _enable_combo_input(self):
+        """Called after announcement delay for stages 2+. Mirrors start_counting()."""
+        winsound.Beep(1000, 150)
+        self.input_field.setEnabled(True)
+        self.input_field.setFocus()
+        # Reset target timing to now so timeout is measured from when user can actually type
+        self.target_start_time = time.time()
+        self.target_timer.start(int(self.target_timeout * 1000))
+
+    def _get_combo_announcement(self, combo):
+        """Convert combo string to screen reader announcement."""
+        parts = []
+        for char in combo:
+            if char in symbol_pronounciation:
+                parts.append(symbol_pronounciation[char])
+            elif char.isupper():
+                parts.append(f"{char.lower()} majuscule" if not self.is_english else f"{char.lower()} capital")
+            else:
+                parts.append(char)
+        return ", ".join(parts)
+
+    def _on_input_changed(self, text):
+        """Handle typing input - check for combo match."""
+        if not text:
+            return
+
+        typed = text.strip()
+
+        if typed == self.current_target:
+            # Correct - exact match
+            self.target_timer.stop()
+            typing_time = time.time() - self.target_start_time
+            
+            winsound.Beep(1500, 100)
+            self.correct_count += 1
+            
+            # Double the combo score, rounded to 2dp to avoid float drift
+            self.combo_score = round(self.combo_score * 2, 2)
+            
+            # Cap at 128 - auto-convert integer part to XP and reset to 1
+            if self.combo_score >= 128:
+                multiplier = self.get_xp_multiplier(self.current_stage)
+                xp_gained = round(int(self.combo_score) * multiplier, 1)
+                self.total_session_xp += xp_gained
+                self.xp_earned = self.total_session_xp
+                self.combo_score = 1.0
+                if self.base_logic.speaker:
+                    msg = (
+                        f"Combo cap! {xp_gained} XP converted."
+                        if self.is_english else
+                        f"Plafond combo ! {xp_gained} XP convertis."
+                    )
+                    self.base_logic.speaker.output(msg)
+            
+            # Track highest combo reached
+            if self.combo_score > self.highest_combo:
+                self.highest_combo = self.combo_score
+            
+            # Log attempt with current score after doubling
+            self._log_combo_attempt(self.current_target, "correct", typing_time, self.combo_score)
+            
+            self._update_displays()
+            self._next_target()
+
+        elif len(text) > len(self.current_target):
+            # User typed more characters than the target - mark as incorrect
+            self.target_timer.stop()
+            winsound.Beep(400, 200)
+            self.incorrect_count += 1
+            
+            # Divide score by 3, rounded to 2dp to prevent infinite float expansion
+            self.combo_score = round(self.combo_score / 3.0, 2)
+            # Minimum floor of 0.01 so score never reaches exactly zero
+            if self.combo_score < 0.01:
+                self.combo_score = 0.01
+            
+            # Log attempt with current score after division
+            self._log_combo_attempt(self.current_target, "incorrect", None, self.combo_score)
+            
+            self._update_displays()
+            self.input_field.blockSignals(True)
+            self.input_field.clear()
+            self.input_field.blockSignals(False)
+            self._next_target()
+
+    def _on_target_timeout(self):
+        """Handle timeout - reset score to 1."""
+        winsound.Beep(600, 300)
+        self.timeout_count += 1
+        
+        # Reset score to 1 on timeout
+        self.combo_score = 1.0
+        
+        self._log_combo_attempt(self.current_target, "timeout", None, self.combo_score)
+        
+        self._update_displays()
+        self._next_target()
+
+    def _update_session_timer(self):
+        """Update timers and check for stage transitions."""
+        # Calculate stage elapsed time
+        stage_elapsed = time.time() - self.stage_start_time
+        stage_remaining = self.stage_duration - stage_elapsed
+
+        if stage_remaining <= 0:
+            # Stage complete - convert XP and transition to next stage
+            self._convert_stage_xp()
+            self._transition_stage()
+            return
+
+        m = int(stage_remaining) // 60
+        s = int(stage_remaining) % 60
+        v = f"Stage Time: {m}:{s:02d}" if self.is_english else f"Temps d'Étape : {m}:{s:02d}"
+        a = (f"{m} minutes {s} seconds remaining in this stage"
+             if self.is_english else
+             f"{m} minutes {s} secondes restantes dans cette étape")
+        self.timer_label.update_text(v, a)
+
+    def _convert_stage_xp(self):
+        """Convert current combo score to XP at end of stage.
+        Only the integer part of the score is used - fractional points
+        below 1 are ignored to keep XP clean to 1 decimal place.
+        """
+        multiplier = self.get_xp_multiplier(self.current_stage)
+        xp_gained = round(int(self.combo_score) * multiplier, 1)
+        self.total_session_xp += xp_gained
+        self.xp_earned = self.total_session_xp
+        self._update_displays()
+
+    def _transition_stage(self):
+        """Move to the next stage or handle stage completion."""
+        if self.current_stage < 3:
+            # Transition from mandatory stages (1->2, 2->3)
+            self.current_stage += 1
+            self.stage_start_time = time.time()
+            self.combo_score = 1.0  # Reset score for new stage
+            
+            stage_names = {
+                1: ("Stage 1 - Single Character",      "Etape 1 - Caractere Unique"),
+                2: ("Stage 2 - Two Character Combos",   "Etape 2 - Combos de Deux Caracteres"),
+                3: ("Stage 3 - Three Character Combos", "Etape 3 - Combos de Trois Caracteres"),
+            }
+            eng_name, fr_name = stage_names[self.current_stage]
+            display_text = eng_name if self.is_english else fr_name
+            
+            self.stage_label.update_text(display_text, display_text)
+            
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(
+                    f"Stage {self.current_stage} started!" if self.is_english
+                    else f"L'étape {self.current_stage} a commencé !"
+                )
+            
+            self._next_target()
+        elif self.current_stage == 3:
+            # Stage 3 complete - check accuracy
+            self._complete_mandatory_stages()
+        else:
+            # Bonus stage (4+) complete - offer to continue or exit
+            self._complete_bonus_stage()
+
+    def _complete_mandatory_stages(self):
+        """Handle completion of mandatory Stage 3."""
+        self.session_timer.stop()
+        self.target_timer.stop()
+        self.message_timer.stop()
+
+        total = self.correct_count + self.incorrect_count
+        self.session_accuracy = (self.correct_count / total * 100) if total > 0 else 0.0
+
+        if self.session_accuracy < 70:
+            self.failed_mode = True
+            self._show_failure_page()
+        else:
+            # Mandatory stages passed - can continue or exit
+            self._show_stage3_complete_page()
+
+    def _complete_bonus_stage(self):
+        """Handle completion of a bonus stage (Stage 4+)."""
+        self.session_timer.stop()
+        self.target_timer.stop()
+        self.message_timer.stop()
+
+        # Calculate accuracy for this entire session
+        total = self.correct_count + self.incorrect_count
+        self.session_accuracy = (self.correct_count / total * 100) if total > 0 else 0.0
+
+        # Show bonus stage completion with option to continue
+        if self.is_english:
+            title = f"STAGE {self.current_stage} COMPLETE"
+            stats_text = (
+                f"Stage Accuracy: {self.session_accuracy:.1f}%\n"
+                f"Highest Combo This Stage: {self.highest_combo:.1f}\n"
+                f"Total Session Accuracy: {self.session_accuracy:.1f}%\n\n"
+                f"Bonus Stage Reward: +20 XP and -5% Boss Health earned.\n"
+                f"Continue to Stage {self.current_stage + 1} for more rewards?"
+            )
+            btn_continue_text = f"Continue to Stage {self.current_stage + 1}"
+            btn_return_text = "Exit and Return to Challenge Battle"
+        else:
+            title = f"ÉTAPE {self.current_stage} COMPLÈTE"
+            stats_text = (
+                f"Précision de l'Étape : {self.session_accuracy:.1f} %\n"
+                f"Combo le Plus Élevé de cette Étape : {self.highest_combo:.1f}\n"
+                f"Précision Totale de la Session : {self.session_accuracy:.1f} %\n\n"
+                f"Récompense Étape Bonus : +20 XP et -5 % santé du Boss gagnés.\n"
+                f"Continuer à l'étape {self.current_stage + 1} pour plus de récompenses ?"
+            )
+            btn_continue_text = f"Continuer à l'étape {self.current_stage + 1}"
+            btn_return_text = "Quitter et Retourner au Combat de Défi"
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.setMinimumWidth(520)
+        dlg.setStyleSheet(self.styleSheet())
+
+        layout = QVBoxLayout()
+
+        title_label = AccessibleLabel(visual_text=title, accessible_text=title)
+        title_label.setStyleSheet(
+            "font-size: 26px; font-weight: bold; color: #0fecb0;"
+            "background-color: transparent; border: none; padding: 6px;"
         )
-        self.warmup_history_path = os.path.join(
-            user_dir, f"{clean_name}_Warmup_Session.csv"
+        layout.addWidget(title_label)
+
+        stats_browser = AccessibleBrowser(text=stats_text, accessible_text=stats_text)
+        stats_browser.setMinimumHeight(220)
+        layout.addWidget(stats_browser)
+
+        btn_layout = QHBoxLayout()
+
+        btn_continue = QPushButton(btn_continue_text)
+        btn_continue.clicked.connect(self._continue_to_next_bonus_stage)
+        btn_layout.addWidget(btn_continue)
+
+        btn_return = QPushButton(btn_return_text)
+        btn_return.clicked.connect(lambda: self._exit_bonus_stages(dlg))
+        btn_layout.addWidget(btn_return)
+
+        layout.addLayout(btn_layout)
+        dlg.setLayout(layout)
+        dlg.exec_()
+
+    def _continue_to_next_bonus_stage(self):
+        """Continue from current bonus stage to the next one."""
+        # Apply bonus stage rewards
+        if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
+            logic = self.parent_challenge.logic
+            logic.add_xp(20)
+            logic.boss_health = max(0, logic.boss_health - 5)
+
+        # Move to next bonus stage
+        self.combo_score = 1.0  # Reset for new stage
+        self.current_stage += 1
+        self.highest_combo = 1.0  # Reset highest for new stage
+        self.stage_start_time = time.time()
+        
+        stage_names = {
+            4: ("Stage 4 - Four Character Combos",  "Etape 4 - Combos de Quatre Caracteres"),
+            5: ("Stage 5 - Five Character Combos",   "Etape 5 - Combos de Cinq Caracteres"),
+        }
+        eng_name, fr_name = stage_names.get(
+            self.current_stage,
+            (f"Stage {self.current_stage} - Bonus Challenge",
+             f"Etape {self.current_stage} - Defi Bonus")
         )
+        display_text = eng_name if self.is_english else fr_name
+        
+        self.stage_label.update_text(display_text, display_text)
+        
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(
+                f"Bonus Stage {self.current_stage} started!" if self.is_english
+                else f"L'étape bonus {self.current_stage} a commencé !"
+            )
+        
+        self.session_timer.start(1000)
+        self._next_target()
+
+    def _exit_bonus_stages(self, dialog):
+        """Exit from bonus stages and return to battle."""
+        dialog.accept()
+        
+        # Apply final bonus stage rewards before exiting
+        if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
+            logic = self.parent_challenge.logic
+            logic.add_xp(20)
+            logic.boss_health = max(0, logic.boss_health - 5)
+            logic.save_progress()
+            self.parent_challenge.update_display()
+        
+        # Show final results and return
+        self._show_final_results_page()
+
+    def _show_failure_page(self):
+        """Show failure screen when accuracy < 70%."""
+        if self.is_english:
+            title = "ACCURACY TOO LOW"
+            message = (
+                f"Final Accuracy: {self.session_accuracy:.1f}%\n\n"
+                f"You need at least 70% accuracy to complete Combo Mode.\n"
+                f"Please try again later!"
+            )
+            button_text = "Return to Challenge Battle"
+        else:
+            title = "PRÉCISION INSUFFISANTE"
+            message = (
+                f"Précision Finale : {self.session_accuracy:.1f} %\n\n"
+                f"Vous avez besoin d'au moins 70 % de précision pour terminer le Mode Combo.\n"
+                f"Veuillez réessayer plus tard !"
+            )
+            button_text = "Retour au Combat de Défi"
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.setMinimumWidth(520)
+        dlg.setStyleSheet(self.styleSheet())
+
+        layout = QVBoxLayout()
+
+        title_label = AccessibleLabel(visual_text=title, accessible_text=title)
+        title_label.setStyleSheet(
+            "font-size: 26px; font-weight: bold; color: #e94560;"
+            "background-color: transparent; border: none; padding: 6px;"
+        )
+        layout.addWidget(title_label)
+
+        msg_browser = AccessibleBrowser(text=message, accessible_text=message)
+        msg_browser.setMinimumHeight(180)
+        layout.addWidget(msg_browser)
+
+        btn_return = QPushButton(button_text)
+        btn_return.clicked.connect(lambda: self._return_to_challenge(dlg))
+        layout.addWidget(btn_return)
+
+        dlg.setLayout(layout)
+        dlg.exec_()
+
+    def _show_stage3_complete_page(self):
+        """Show completion screen with option to continue or return."""
+        if self.is_english:
+            title = "STAGE 3 COMPLETE"
+            stats_text = (
+                f"Correct Answers: {self.correct_count}\n"
+                f"Incorrect Answers: {self.incorrect_count}\n"
+                f"Timeouts: {self.timeout_count}\n"
+                f"Final Accuracy: {self.session_accuracy:.1f}%\n"
+                f"Highest Combo Score: {self.highest_combo:.1f}\n"
+                f"Total XP Earned: {int(self.total_session_xp)}\n\n"
+                f"You passed! +40 XP and -15% Boss Health awarded.\n"
+                f"Continue for bonus stages with longer combos and more XP?"
+            )
+            btn_continue_text = "Continue Combo Challenge (Bonus)"
+            btn_return_text = "Return to Challenge Battle"
+        else:
+            title = "ÉTAPE 3 COMPLÈTE"
+            stats_text = (
+                f"Bonnes Réponses : {self.correct_count}\n"
+                f"Mauvaises Réponses : {self.incorrect_count}\n"
+                f"Dépassements : {self.timeout_count}\n"
+                f"Précision Finale : {self.session_accuracy:.1f} %\n"
+                f"Score Combo le Plus Élevé : {self.highest_combo:.1f}\n"
+                f"XP Total Gagné : {int(self.total_session_xp)}\n\n"
+                f"Vous avez réussi ! +40 XP et -15 % santé du Boss accordés.\n"
+                f"Continuer pour les étapes bonus avec des combos plus longs et plus de XP ?"
+            )
+            btn_continue_text = "Continuer Défi Combo (Bonus)"
+            btn_return_text = "Retour au Combat de Défi"
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.setMinimumWidth(520)
+        dlg.setStyleSheet(self.styleSheet())
+
+        layout = QVBoxLayout()
+
+        title_label = AccessibleLabel(visual_text=title, accessible_text=title)
+        title_label.setStyleSheet(
+            "font-size: 26px; font-weight: bold; color: #0fecb0;"
+            "background-color: transparent; border: none; padding: 6px;"
+        )
+        layout.addWidget(title_label)
+
+        stats_browser = AccessibleBrowser(text=stats_text, accessible_text=stats_text)
+        stats_browser.setMinimumHeight(260)
+        layout.addWidget(stats_browser)
+
+        btn_layout = QHBoxLayout()
+
+        btn_continue = QPushButton(btn_continue_text)
+        btn_continue.clicked.connect(self._continue_to_next_bonus_stage)
+        btn_layout.addWidget(btn_continue)
+
+        btn_return = QPushButton(btn_return_text)
+        btn_return.clicked.connect(lambda: self._end_session_and_return(dlg))
+        btn_layout.addWidget(btn_return)
+
+        layout.addLayout(btn_layout)
+        dlg.setLayout(layout)
+        dlg.exec_()
+
+
+    def _end_session_and_return(self, dialog):
+        """End the session after Stage 3 completion (success) and return to battle."""
+        dialog.accept()
+        
+        # Final XP conversion from the completed stage
+        self._convert_stage_xp()
+        
+        # Update challenge state with success rewards
+        self._update_challenge_state_success()
+        self._show_final_results_page()
+
+    def _update_displays(self):
+        """Update all display labels."""
+        # XP label
+        v = f"XP Balance: {int(self.xp_earned)}" if self.is_english else f"Solde XP : {int(self.xp_earned)}"
+        a = f"{int(self.xp_earned)} XP earned" if self.is_english else f"{int(self.xp_earned)} XP gagnés"
+        self.xp_label.update_text(v, a)
+
+        # Combo score label
+        v = f"Combo Score: {self.combo_score:.1f}" if self.is_english else f"Score Combo : {self.combo_score:.1f}"
+        a = f"Current combo score is {self.combo_score:.1f}" if self.is_english else f"Le score de combo actuel est {self.combo_score:.1f}"
+        self.combo_score_label.update_text(v, a)
+
+    def get_xp_multiplier(self, stage):
+        """Get XP conversion multiplier for a stage."""
+        if stage == 1:
+            return 0.1
+        elif stage == 2:
+            return 0.2
+        elif stage == 3:
+            return 0.4
+        else:
+            # Bonus stages scale: 0.4 + (stage - 3) * 0.1
+            return 0.4 + (stage - 3) * 0.1
+
+    def _update_challenge_state_success(self):
+        """Update challenge state after successful Combo Mode completion."""
+        if not (self.parent_challenge and hasattr(self.parent_challenge, 'logic')):
+            return
+        
+        logic = self.parent_challenge.logic
+        
+        # Add base completion reward
+        logic.add_xp(40)
+        logic.boss_health = max(0, logic.boss_health - 15)
+        
+        logic.modes["combo"]["status"] = "done"
+        logic.modes["combo"]["completed"] = True
+        logic.completed_modes_count = sum(
+            1 for v in logic.modes.values() if v["completed"]
+        )
+        
+        # Unlock other modes
+        for mk, data in logic.modes.items():
+            if mk != "crazy_party" and not data["completed"]:
+                data["status"] = "unlocked"
+        
+        logic.save_progress()
+        self.parent_challenge.update_display()
+
+    def _show_final_results_page(self):
+        """Show final results after mode completion."""
+        if self.is_english:
+            title = "COMBO MODE COMPLETE"
+            message = (
+                f"Accuracy: {self.session_accuracy:.1f}%\n"
+                f"Correct Answers: {self.correct_count}\n"
+                f"Incorrect Answers: {self.incorrect_count}\n"
+                f"Timeouts: {self.timeout_count}\n"
+                f"Highest Combo: {self.highest_combo:.1f}\n"
+                f"XP Earned: {int(self.xp_earned)}\n"
+                f"Stages Completed: {self.current_stage}\n\n"
+                f"Completion Bonus: +40 XP | Boss Damage: -15%"
+            )
+            button_text = "Return to Challenge Battle"
+        else:
+            title = "MODE COMBO COMPLET"
+            message = (
+                f"Précision : {self.session_accuracy:.1f} %\n"
+                f"Bonnes Réponses : {self.correct_count}\n"
+                f"Mauvaises Réponses : {self.incorrect_count}\n"
+                f"Dépassements : {self.timeout_count}\n"
+                f"Combo le Plus Élevé : {self.highest_combo:.1f}\n"
+                f"XP Gagné : {int(self.xp_earned)}\n"
+                f"Étapes Complétées : {self.current_stage}\n\n"
+                f"Bonus d'Achèvement : +40 XP | Dommage Boss : -15 %"
+            )
+            button_text = "Retour au Combat de Défi"
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.setMinimumWidth(520)
+        dlg.setStyleSheet(self.styleSheet())
+
+        layout = QVBoxLayout()
+
+        title_label = AccessibleLabel(visual_text=title, accessible_text=title)
+        title_label.setStyleSheet(
+            "font-size: 26px; font-weight: bold; color: #0fecb0;"
+            "background-color: transparent; border: none; padding: 6px;"
+        )
+        layout.addWidget(title_label)
+
+        msg_browser = AccessibleBrowser(text=message, accessible_text=message)
+        msg_browser.setMinimumHeight(240)
+        layout.addWidget(msg_browser)
+
+        btn_return = QPushButton(button_text)
+        btn_return.clicked.connect(lambda: self._return_to_challenge(dlg))
+        layout.addWidget(btn_return)
+
+        dlg.setLayout(layout)
+        dlg.exec_()
+
+    def leave_session(self):
+        """Exit early - penalty and cleanup."""
+        self.session_timer.stop()
+        self.target_timer.stop()
+        self.message_timer.stop()
+
+        # Delete combo CSV on exit
+        if self.combo_csv_path and os.path.exists(self.combo_csv_path):
+            try:
+                os.remove(self.combo_csv_path)
+            except Exception:
+                pass
+
+        # Apply penalty
+        if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
+            logic = self.parent_challenge.logic
+            logic.xp_balance = max(0, logic.xp_balance - 50)
+            logic.save_progress()
+            self.parent_challenge.update_display()
+
+        if self.base_logic.speaker:
+            msg = (
+                "Combo session exited. 50 XP penalty applied."
+                if self.is_english else
+                "Session Combo quittée. Pénalité de 50 XP appliquée."
+            )
+            self.base_logic.speaker.output(msg)
+
+        if self.parent_challenge:
+            self.parent_challenge.pages.setCurrentIndex(1)
+        self.close()
+
+    def _return_to_challenge(self, dialog):
+        """Return to main challenge battle."""
+        dialog.accept()
+        if self.parent_challenge:
+            self.parent_challenge.pages.setCurrentIndex(1)
+            self.parent_challenge.update_display()
+        self.close()
+
+
+
+# ============= PRECISION ARENA WELCOME PAGE =============
+
+class PrecisionWelcomePage(QWidget):
+    """Intro screen shown before Precision Arena typing session."""
+
+    def __init__(self, parent, is_english=True):
+        super().__init__()
+        self.parent_challenge = parent
+        self.is_english = is_english
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout()
+
+        if self.is_english:
+            title_text   = "PRECISION ARENA - Accuracy Marathon"
+            instructions = (
+                "7 minutes of nonstop typing. No timeouts.\n\n"
+                "HOW IT WORKS:\n"
+                "Type each target exactly as shown. It validates automatically once you "
+                "have typed enough characters. Wrong answer? You move on immediately. "
+                "This is an arena, not a classroom.\n\n"
+                "TWO PHASES:\n"
+                "First 4 minutes: random characters.\n"
+                "Final 3 minutes: adapts to your weakest letters based on your history.\n\n"
+                "MEDALS (accuracy required):\n"
+                "Bronze: 91% | Silver: 93% | Gold: 95% | Diamond: 97% | Master: 99%\n\n"
+                "SPEED REQUIREMENT:\n"
+                "You also need at least 20 CPM. Medal still shows if accuracy qualifies, "
+                "but is only officially granted if speed qualifies too.\n\n"
+                "REWARDS on success: +50 XP, -15% boss health, plus medal bonus XP.\n"
+                "Failed run: retry anytime. Progress is always saved."
+            )
+            button_text  = "I'm ready for it!"
+        else:
+            title_text   = "PRECISION ARENA - Marathon de Precision"
+            instructions = (
+                "7 minutes de frappe continue. Pas de delai.\n\n"
+                "COMMENT CA MARCHE :\n"
+                "Tapez chaque cible exactement. La validation est automatique des que vous "
+                "avez assez de caracteres. Mauvaise reponse ? On passe immediatement. "
+                "C'est une arene, pas une salle de classe.\n\n"
+                "DEUX PHASES :\n"
+                "4 premieres minutes : caracteres aleatoires.\n"
+                "3 dernieres minutes : s'adapte a vos lettres les plus faibles.\n\n"
+                "MEDAILLES (precision requise) :\n"
+                "Bronze : 91% | Argent : 93% | Or : 95% | Diamant : 97% | Maitre : 99%\n\n"
+                "EXIGENCE DE VITESSE :\n"
+                "Vous avez aussi besoin d'au moins 20 CPM. La medaille s'affiche si la "
+                "precision qualifie, mais ne compte que si la vitesse aussi.\n\n"
+                "Reussite : +50 XP, -15% sante boss, plus XP bonus de medaille.\n"
+                "Echec : recommencez quand vous voulez."
+            )
+            button_text  = "Je suis pret !"
+
+        title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
+        title.setStyleSheet(
+            "font-size: 26px; font-weight: bold; color: #0fecb0;"
+            "background-color: transparent; border: none; padding: 8px;"
+        )
+        layout.addWidget(title)
+
+        inst_field = AccessibleBrowser(text=instructions, accessible_text=instructions)
+        inst_field.setMinimumHeight(380)
+        layout.addWidget(inst_field)
+
+        btn_ready = QPushButton(button_text)
+        btn_ready.clicked.connect(self._launch)
+        layout.addWidget(btn_ready)
+
+        layout.addStretch()
+        self.setLayout(layout)
+
+    def _launch(self):
+        if hasattr(self.parent_challenge, 'launch_precision_session'):
+            self.parent_challenge.launch_precision_session()
+        self.close()
+
+
+# ============= PRECISION ARENA TYPING MODE =============
+
+class PrecisionArenaMode(QWidget):
+    """
+    Precision Arena - 7-minute accuracy marathon.
+    No timeout system. Auto-validates at target length.
+    Counts characters, not attempts.
+    Medal system based on accuracy + CPM requirement.
+    First 4 min: random. Final 3 min: adaptive weighted.
+    """
+
+    SESSION_DURATION = 420   # 7 minutes in seconds
+    ADAPTIVE_START   = 240   # switch to adaptive at 4 minutes
+
+    # (medal_key, accuracy_threshold, icon_path, bonus_xp)
+    MEDALS = [
+        ("master",  99, "static/mtr.png", 150),
+        ("diamond", 97, "static/dmd.png", 100),
+        ("gold",    95, "static/gld.png",  50),
+        ("silver",  93, "static/slv.png",  50),
+        ("bronze",  91, "static/bnz.png",  25),
+    ]
+
+    def __init__(self, base_logic, is_english=True, parent=None):
+        super().__init__()
+        self.base_logic       = base_logic
+        self.is_english       = is_english
+        self.parent_challenge = parent
+
+        # Session state
+        self.session_elapsed      = 0
+        self.current_target       = ""
+        self.current_phase        = "random"
+
+        # Stats - character-based, not attempt-based
+        self.correct_chars        = 0
+        self.incorrect_chars      = 0
+
+        # Adaptive phase
+        self.phase_weights_built  = False
+        self.session_letter_stats = {}   # {LETTER: {correct: N, total: N}}
+        self.adaptive_weights     = {}   # {letter: weight}
+
+        # CSV paths
+        self.precision_csv_path     = None
+        self.precision_history_path = None
+        self.warmup_history_path    = None
+
+        self._setup_ui()
+        self._setup_timer()
+
+    # ---- UI ----
+
+    def _setup_ui(self):
+        layout = QVBoxLayout()
+
+        if self.is_english:
+            title_text     = "PRECISION ARENA - Accuracy Marathon"
+            instructions   = (
+                "7 minutes nonstop. No timeouts. Type the target - validates automatically.\n"
+                "First 4 min: random. Final 3 min: adapts to your weak letters."
+            )
+            correct_v      = "Correct Chars: 0"
+            incorrect_v    = "Incorrect Chars: 0"
+            accuracy_v     = "Accuracy: ?"
+            timer_v        = "Remaining: 7:00"
+            button_text    = "Leave and Go Back to Challenge Battle"
+        else:
+            title_text     = "PRECISION ARENA - Marathon de Precision"
+            instructions   = (
+                "7 minutes sans arret. Pas de delai. Tapez la cible - validation automatique.\n"
+                "4 min aleatoires. 3 dernieres min : s'adapte a vos lettres faibles."
+            )
+            correct_v      = "Caracteres Corrects : 0"
+            incorrect_v    = "Caracteres Incorrects : 0"
+            accuracy_v     = "Precision : ?"
+            timer_v        = "Restant : 7:00"
+            button_text    = "Quitter et Retourner au Combat de Defi"
+
+        mode_title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
+        mode_title.setStyleSheet(
+            "font-size: 24px; font-weight: bold; color: #0fecb0;"
+            "background-color: transparent; border: none; padding: 6px;"
+        )
+        layout.addWidget(mode_title)
+
+        self.instructions_display = AccessibleBrowser(
+            text=instructions, accessible_text=instructions
+        )
+        self.instructions_display.setMinimumHeight(70)
+        layout.addWidget(self.instructions_display)
+
+        # Stats row 1: correct + incorrect chars
+        stats1 = QHBoxLayout()
+        self.correct_label = AccessibleLabel(visual_text=correct_v, accessible_text=correct_v)
+        stats1.addWidget(self.correct_label)
+        self.incorrect_label = AccessibleLabel(visual_text=incorrect_v, accessible_text=incorrect_v)
+        stats1.addWidget(self.incorrect_label)
+        layout.addLayout(stats1)
+
+        # Stats row 2: accuracy + timer
+        stats2 = QHBoxLayout()
+        acc_accessible = ("Accuracy hidden until adaptive phase."
+                          if self.is_english else
+                          "Precision masquee jusqu'a la phase adaptative.")
+        self.accuracy_label = AccessibleLabel(visual_text=accuracy_v, accessible_text=acc_accessible)
+        stats2.addWidget(self.accuracy_label)
+        self.timer_label = AccessibleLabel(visual_text=timer_v, accessible_text=timer_v)
+        stats2.addWidget(self.timer_label)
+        layout.addLayout(stats2)
+
+        # Target display
+        self.target_display = AccessibleLabel(
+            visual_text="", accessible_text="Waiting for session to start"
+        )
+        self.target_display.setStyleSheet(
+            "font-size: 110px; color: #f9d342;"
+            "border: 3px solid #f9d342; border-radius: 10px;"
+            "background-color: #1a1a2e; padding: 8px; min-height: 160px;"
+        )
+        layout.addWidget(self.target_display)
+
+        # Typing input
+        self.input_field = QLineEdit()
+        self.input_field.textChanged.connect(self._on_input_changed)
+        layout.addWidget(self.input_field)
+
+        btn_leave = QPushButton(button_text)
+        btn_leave.clicked.connect(self.leave_session)
+        layout.addWidget(btn_leave)
+
+        self.setLayout(layout)
+
+    def _setup_timer(self):
+        self.session_timer = QTimer()
+        self.session_timer.timeout.connect(self._tick)
+
+    # ---- Session lifecycle ----
+
+    def start_session(self):
+        self.session_elapsed      = 0
+        self.correct_chars        = 0
+        self.incorrect_chars      = 0
+        self.current_phase        = "random"
+        self.phase_weights_built  = False
+        self.session_letter_stats = {}
+
+        self._init_paths()
+        self._init_precision_csv()
+        self._refresh_stats_display()
+
+        self.session_timer.start(1000)
+        self._next_target()
+
+        if self.base_logic.speaker:
+            msg = ("Precision Arena started. Focus on accuracy!"
+                   if self.is_english else
+                   "Precision Arena demarree. Concentrez-vous sur la precision !")
+            self.base_logic.speaker.output(msg)
+
+    # ---- CSV ----
+
+    def _init_paths(self):
+        clean_name = self.base_logic.get_clean_username()
+        user_dir   = os.path.join(self.base_logic.data_dir, clean_name)
+        os.makedirs(user_dir, exist_ok=True)
+        self.precision_csv_path     = os.path.join(user_dir, f"{clean_name}_Precision_Arena_Session.csv")
+        self.precision_history_path = os.path.join(user_dir, f"{clean_name}_Precision_Arena_History.csv")
+        self.warmup_history_path    = os.path.join(user_dir, f"{clean_name}_Warmup_Session.csv")
 
     def _init_precision_csv(self):
         if not self.precision_csv_path:
-            self._init_precision_paths()
+            return
         try:
             with open(self.precision_csv_path, 'w', newline='', encoding='utf-8') as f:
                 csv.writer(f).writerow([
                     "Timestamp", "Target", "Typed Input", "Correct",
                     "Target Length", "Running Accuracy", "Phase",
-                    "Session Minute", "Cumulative Correct Chars",
-                    "Cumulative Incorrect Chars"
+                    "Session Minute", "Cumulative Correct Chars", "Cumulative Incorrect Chars",
                 ])
         except Exception:
             pass
 
-    def _next_target(self):
-        self.current_phase = "random" if self.session_elapsed < 240 else "adaptive"
-        if self.current_phase == "adaptive" and not self.phase_weights_built:
-            self._build_adaptive_weights()
-
-        self.current_target = self._generate_precision_target()
-        self._prepare_target_display()
-
-        self.input_field.blockSignals(True)
-        self.input_field.clear()
-        self.input_field.blockSignals(False)
-
-        if len(self.current_target) >= 3:
-            self.input_field.setDisabled(True)
-            self.session_timer.stop()
-            self._announce_long_target()
-        else:
-            self.input_field.setDisabled(False)
-            if not self.session_timer.isActive():
-                self.session_timer.start(1000)
-            if self.base_logic.speaker:
-                self.base_logic.speaker.output(self.target_display.accessibleName())
-        self.input_field.setFocus()
-
-    def _generate_precision_target(self):
-        lengths = [1, 2, 3, 4]
-        length = random.choices(lengths, weights=[30, 40, 20, 10], k=1)[0]
-        target_chars = []
-        for _ in range(length):
-            if random.random() < 0.05 and symbol_pronounciation:
-                target_chars.append(random.choice(list(symbol_pronounciation.keys())))
-            else:
-                target_chars.append(self._choose_weighted_letter())
-        return "".join(target_chars)
-
-    def _choose_weighted_letter(self):
-        letters = [chr(c) for c in range(ord('a'), ord('z') + 1)]
-        if not self.target_history_weights:
-            base_letter = random.choice(letters)
-        else:
-            populations = letters
-            weights = [self.target_history_weights.get(letter, 4) for letter in populations]
-            base_letter = random.choices(populations, weights=weights, k=1)[0]
-        return base_letter if random.random() < 0.5 else base_letter.upper()
-
-    def _get_announcement_text(self, char):
-        if char in symbol_pronounciation:
-            return symbol_pronounciation[char]
-        if char.isupper() and char.isalpha():
-            return f"{char.lower()} majuscule"
-        return char
-
-    def _get_spelling_announcement(self, target):
-        return ", ".join(self._get_announcement_text(c) for c in target)
-
-    def _prepare_target_display(self):
-        announcement = self._get_spelling_announcement(self.current_target)
-        self.target_display.update_text(self.current_target, announcement)
-        self.target_display.setStyleSheet(
-            "font-size: 120px; color: #f9d342;"
-            "border: 3px solid #f9d342; border-radius: 10px;"
-            "background-color: #1a1a2e; padding: 8px; min-height: 160px;"
-        )
-
-    def _announce_long_target(self):
-        announcements = [self._get_announcement_text(c) for c in self.current_target]
-        delay = 0
-        for ann in announcements:
-            QTimer.singleShot(delay, lambda ann=ann: self._speak_announcement(ann))
-            delay += max(250, len(ann) * 80)
-        QTimer.singleShot(delay, self._enable_long_target_typing)
-
-    def _speak_announcement(self, text):
-        if self.base_logic.speaker:
-            self.base_logic.speaker.output(text)
-
-    def _enable_long_target_typing(self):
-        winsound.Beep(1000, 100)
-        self.input_field.setDisabled(False)
-        self.input_field.setFocus()
-        if not self.session_timer.isActive():
-            self.session_timer.start(1000)
-
-    def _on_input_changed(self, text):
-        if not self.current_target or not self.input_field.isEnabled():
-            return
-        if len(text) < len(self.current_target):
-            return
-
-        typed = text[:len(self.current_target)]
-        self.input_field.blockSignals(True)
-        self.input_field.clear()
-        self.input_field.blockSignals(False)
-        self.input_field.setFocus()
-
-        was_correct = typed == self.current_target
-        if self.current_phase == "random":
-            for char in self.current_target:
-                key = char.upper()
-                record = self.session_letter_stats.setdefault(key, {"correct": 0, "total": 0})
-                record["total"] += 1
-                if was_correct:
-                    record["correct"] += 1
-
-        if was_correct:
-            winsound.Beep(1500, 100)
-            self.correct_chars += len(self.current_target)
-        else:
-            winsound.Beep(400, 200)
-            self.incorrect_chars += len(self.current_target)
-
-        self._refresh_stats()
-        self._log_precision_attempt(self.current_target, typed, was_correct)
-        self._next_target()
-
-    def _refresh_stats(self):
-        self.correct_label.update_text(
-            f"Correct Chars: {self.correct_chars}",
-            f"Correct characters: {self.correct_chars}"
-        )
-        self.incorrect_label.update_text(
-            f"Incorrect Chars: {self.incorrect_chars}",
-            f"Incorrect characters: {self.incorrect_chars}"
-        )
-        if self.session_elapsed < 240:
-            accuracy_text = "Accuracy: ?"
-            accessible = "Accuracy hidden until adaptive phase"
-        else:
-            total = self.correct_chars + self.incorrect_chars
-            accuracy = (self.correct_chars / total * 100) if total > 0 else 0.0
-            accuracy_text = f"Accuracy: {accuracy:.1f}%"
-            accessible = f"Current accuracy is {accuracy:.1f} percent"
-        self.accuracy_label.update_text(accuracy_text, accessible)
-
-    def _refresh_timer_display(self):
-        remaining = max(0, self.session_duration - self.session_elapsed)
-        m = remaining // 60
-        s = remaining % 60
-        visual = f"Remaining: {m}:{s:02d}"
-        accessible = (
-            f"{m} minutes {s} seconds remaining"
-            if self.is_english else
-            f"{m} minutes {s} secondes restantes"
-        )
-        self.timer_label.update_text(visual, accessible)
-
-    def _update_session_timer(self):
-        self.session_elapsed += 1
-        if self.session_elapsed >= self.session_duration:
-            self._end_session()
-            return
-        self._refresh_timer_display()
-        self._refresh_stats()
-
-    def _build_adaptive_weights(self):
-        warmup_stats = self._load_char_accuracy(self.warmup_history_path)
-        precision_stats = self._load_char_accuracy(self.precision_history_path)
-        current_stats = self._normalize_session_letter_stats()
-
-        letters = [chr(c) for c in range(ord('a'), ord('z') + 1)]
-        weights = {}
-        for letter in letters:
-            accuracies = []
-            if letter.upper() in warmup_stats:
-                accuracies.append(warmup_stats[letter.upper()])
-            if letter.upper() in precision_stats:
-                accuracies.append(precision_stats[letter.upper()])
-            if letter.upper() in current_stats:
-                accuracies.append(current_stats[letter.upper()])
-
-            if accuracies:
-                accuracy = sum(accuracies) / len(accuracies)
-            else:
-                accuracy = 0.88
-            weight = max(1, min(int((1.0 - accuracy) * 22) + 1, 20))
-            weights[letter] = weight
-
-        self.target_history_weights = weights
-        self.phase_weights_built = True
-
-    def _normalize_session_letter_stats(self):
-        normalized = {}
-        for char, counts in self.session_letter_stats.items():
-            if counts["total"] > 0:
-                normalized[char] = counts["correct"] / counts["total"]
-        return normalized
-
-    def _load_char_accuracy(self, csv_path):
-        accuracy = {}
-        if not csv_path or not os.path.exists(csv_path):
-            return accuracy
-        try:
-            with open(csv_path, 'r', newline='', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    target = row.get("Target", "")
-                    correct = row.get("Correct", "False").strip().lower() in ("true", "1", "yes")
-                    for char in target:
-                        key = char.upper()
-                        if key.isalpha() and char not in symbol_pronounciation:
-                            counts = accuracy.setdefault(key, {"correct": 0, "total": 0})
-                            counts["total"] += 1
-                            if correct:
-                                counts["correct"] += 1
-                for char, counts in list(accuracy.items()):
-                    accuracy[char] = (counts["correct"] / counts["total"]
-                                       if counts["total"] > 0 else 1.0)
-        except Exception:
-            return {}
-        return accuracy
-
-    def _log_precision_attempt(self, target, typed_input, correct):
+    def _log_attempt(self, target, typed_input, correct):
         total = self.correct_chars + self.incorrect_chars
-        running_accuracy = ((self.correct_chars / total) * 100) if total > 0 else 0.0
-        phase = self.current_phase
+        running_acc = (self.correct_chars / total * 100) if total > 0 else 0.0
         minute = min(7, self.session_elapsed // 60 + 1)
         row = [
             time.strftime("%Y-%m-%d %H:%M:%S"),
-            target,
-            typed_input,
-            str(correct),
-            len(target),
-            f"{running_accuracy:.1f}",
-            phase,
-            minute,
-            self.correct_chars,
-            self.incorrect_chars,
+            target, typed_input, str(correct),
+            len(target), f"{running_acc:.1f}",
+            self.current_phase, minute,
+            self.correct_chars, self.incorrect_chars,
         ]
+        # Write to session file AND cumulative history (history kept even on failed runs)
         for path in (self.precision_csv_path, self.precision_history_path):
             if not path:
                 continue
@@ -1014,135 +1794,319 @@ class PrecisionArenaMode(GenericTypingMode):
                         writer.writerow([
                             "Timestamp", "Target", "Typed Input", "Correct",
                             "Target Length", "Running Accuracy", "Phase",
-                            "Session Minute", "Cumulative Correct Chars",
-                            "Cumulative Incorrect Chars"
+                            "Session Minute", "Cumulative Correct Chars", "Cumulative Incorrect Chars",
                         ])
                     writer.writerow(row)
             except Exception:
                 pass
 
+    # ---- Target generation ----
+
+    def _generate_target(self):
+        """Weighted length (30/40/20/10 for 1/2/3/4) + weighted char pool."""
+        lengths = [1, 2, 3, 4]
+        length  = random.choices(lengths, weights=[30, 40, 20, 10], k=1)[0]
+        return "".join(self._pick_char() for _ in range(length))
+
+    def _pick_char(self):
+        """Pick one character. ~5% symbols, rest letters (adaptive or random)."""
+        if random.random() < 0.05 and symbol_pronounciation:
+            return random.choice(list(symbol_pronounciation.keys()))
+
+        letters = [chr(c) for c in range(ord('a'), ord('z') + 1)]
+
+        if self.current_phase == "adaptive" and self.adaptive_weights:
+            weights     = [self.adaptive_weights.get(l, 4) for l in letters]
+            base_letter = random.choices(letters, weights=weights, k=1)[0]
+        else:
+            base_letter = random.choice(letters)
+
+        # 50/50 upper/lower
+        return base_letter.upper() if random.random() < 0.5 else base_letter
+
+    def _get_char_announcement(self, char):
+        """Get screen reader text for a single character."""
+        if char in symbol_pronounciation:
+            return symbol_pronounciation[char]
+        if char.isupper() and char.isalpha():
+            return f"{char.lower()} majuscule"
+        return char
+
+    def _next_target(self):
+        """Show next target. For long targets, delay enabling input until announcement done."""
+        self.current_target = self._generate_target()
+        announcement        = ", ".join(self._get_char_announcement(c) for c in self.current_target)
+        self.target_display.update_text(self.current_target, announcement)
+
+        self.input_field.blockSignals(True)
+        self.input_field.clear()
+        self.input_field.blockSignals(False)
+
+        if len(self.current_target) >= 3 and self.base_logic.speaker:
+            # 3-4 chars: disable input during announcement, enable with beep after delay
+            self.input_field.setEnabled(False)
+            self.base_logic.speaker.output(announcement)
+            total_ann_len = sum(len(self._get_char_announcement(c)) for c in self.current_target)
+            delay = total_ann_len * 70 + 400
+            QTimer.singleShot(delay, self._enable_input_with_beep)
+        else:
+            # 1-2 chars: announce and allow typing immediately
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(announcement)
+            self.input_field.setEnabled(True)
+            self.input_field.setFocus()
+
+    def _enable_input_with_beep(self):
+        winsound.Beep(1000, 100)
+        self.input_field.setEnabled(True)
+        self.input_field.setFocus()
+
+    # ---- Input handling ----
+
+    def _on_input_changed(self, text):
+        if not text or not self.current_target:
+            return
+        # Wait until enough characters typed
+        if len(text) < len(self.current_target):
+            return
+
+        typed = text[:len(self.current_target)]
+
+        self.input_field.blockSignals(True)
+        self.input_field.clear()
+        self.input_field.blockSignals(False)
+
+        was_correct = (typed == self.current_target)
+
+        # Count characters (not attempts)
+        if was_correct:
+            winsound.Beep(1500, 100)
+            self.correct_chars += len(self.current_target)
+        else:
+            winsound.Beep(400, 200)
+            self.incorrect_chars += len(self.current_target)
+
+        # Track letter stats during random phase for adaptive weighting
+        if self.current_phase == "random":
+            for char in self.current_target:
+                if char.isalpha() and char not in symbol_pronounciation:
+                    key = char.upper()
+                    rec = self.session_letter_stats.setdefault(key, {"correct": 0, "total": 0})
+                    rec["total"] += 1
+                    if was_correct:
+                        rec["correct"] += 1
+
+        self._log_attempt(self.current_target, typed, was_correct)
+        self._refresh_stats_display()
+        self.input_field.setFocus()
+        self._next_target()
+
+    # ---- Displays ----
+
+    def _refresh_stats_display(self):
+        # Correct chars
+        v = (f"Correct Chars: {self.correct_chars}"
+             if self.is_english else f"Caracteres Corrects : {self.correct_chars}")
+        a = (f"Correct characters: {self.correct_chars}"
+             if self.is_english else f"Caracteres corrects : {self.correct_chars}")
+        self.correct_label.update_text(v, a)
+
+        # Incorrect chars
+        v = (f"Incorrect Chars: {self.incorrect_chars}"
+             if self.is_english else f"Caracteres Incorrects : {self.incorrect_chars}")
+        a = (f"Incorrect characters: {self.incorrect_chars}"
+             if self.is_english else f"Caracteres incorrects : {self.incorrect_chars}")
+        self.incorrect_label.update_text(v, a)
+
+        # Accuracy: hidden first 4 min, live last 3 min
+        if self.session_elapsed < self.ADAPTIVE_START:
+            v = "Accuracy: ?" if self.is_english else "Precision : ?"
+            a = ("Accuracy hidden until adaptive phase."
+                 if self.is_english else "Precision masquee jusqu'a la phase adaptative.")
+        else:
+            total = self.correct_chars + self.incorrect_chars
+            acc   = (self.correct_chars / total * 100) if total > 0 else 0.0
+            v = f"Accuracy: {acc:.1f}%" if self.is_english else f"Precision : {acc:.1f}%"
+            a = (f"Current accuracy: {acc:.1f} percent"
+                 if self.is_english else f"Precision actuelle : {acc:.1f} pourcent")
+        self.accuracy_label.update_text(v, a)
+
+    # ---- Session timer ----
+
+    def _tick(self):
+        self.session_elapsed += 1
+        remaining = self.SESSION_DURATION - self.session_elapsed
+
+        if remaining <= 0:
+            self._end_session()
+            return
+
+        # Switch to adaptive phase at 4 minutes
+        if self.session_elapsed >= self.ADAPTIVE_START and not self.phase_weights_built:
+            self._build_adaptive_weights()
+            self.current_phase = "adaptive"
+            if self.base_logic.speaker:
+                msg = ("Adaptive phase started. Focusing on your weak letters."
+                       if self.is_english else
+                       "Phase adaptative demarree. Concentration sur vos lettres faibles.")
+                self.base_logic.speaker.output(msg)
+
+        m = remaining // 60
+        s = remaining % 60
+        v = f"Remaining: {m}:{s:02d}" if self.is_english else f"Restant : {m}:{s:02d}"
+        a = (f"{m} minutes {s} seconds remaining"
+             if self.is_english else f"{m} minutes {s} secondes restantes")
+        self.timer_label.update_text(v, a)
+        self._refresh_stats_display()
+
+    # ---- Adaptive weights ----
+
+    def _build_adaptive_weights(self):
+        """Merge accuracy from warmup history + past precision history + session stats."""
+        merged = {}
+
+        for path in (self.warmup_history_path, self.precision_history_path):
+            for letter, acc in self._load_char_accuracy(path).items():
+                merged.setdefault(letter, []).append(acc)
+
+        for letter, counts in self.session_letter_stats.items():
+            if counts["total"] > 0:
+                acc = counts["correct"] / counts["total"]
+                merged.setdefault(letter, []).append(acc)
+
+        letters = [chr(c) for c in range(ord('a'), ord('z') + 1)]
+        for letter in letters:
+            key = letter.upper()
+            if key in merged and merged[key]:
+                avg_acc = sum(merged[key]) / len(merged[key])
+            else:
+                avg_acc = 0.88  # default: assume reasonable
+            # Weight range 1-20; weaker letters (lower accuracy) get higher weight
+            self.adaptive_weights[letter] = max(1, min(int((1.0 - avg_acc) * 22) + 1, 20))
+
+        self.phase_weights_built = True
+
+    def _load_char_accuracy(self, csv_path):
+        """Return {LETTER: accuracy_float} from a CSV file. Ignores timing columns."""
+        result = {}
+        if not csv_path or not os.path.exists(csv_path):
+            return result
+        try:
+            counts = {}
+            with open(csv_path, 'r', newline='', encoding='utf-8') as f:
+                for row in csv.DictReader(f):
+                    target      = row.get("Target", "")
+                    correct_raw = row.get("Correct", "False").strip().lower()
+                    correct     = correct_raw in ("true", "1", "yes", "correct")
+                    for char in target:
+                        key = char.upper()
+                        if key.isalpha() and char not in symbol_pronounciation:
+                            rec = counts.setdefault(key, {"correct": 0, "total": 0})
+                            rec["total"] += 1
+                            if correct:
+                                rec["correct"] += 1
+            for letter, rec in counts.items():
+                if rec["total"] > 0:
+                    result[letter] = rec["correct"] / rec["total"]
+        except Exception:
+            pass
+        return result
+
+    # ---- Session end ----
+
     def _end_session(self):
         self.session_timer.stop()
-        self.input_field.setDisabled(True)
+        self.input_field.setEnabled(False)
 
         total_chars = self.correct_chars + self.incorrect_chars
-        accuracy = ((self.correct_chars / total_chars) * 100) if total_chars > 0 else 0.0
-        cpm = (total_chars / 7) if total_chars > 0 else 0.0
+        accuracy    = (self.correct_chars / total_chars * 100) if total_chars > 0 else 0.0
+        cpm         = total_chars / 7.0
 
-        medal = None
-        if accuracy >= 99:
-            medal = "master"
-        elif accuracy >= 97:
-            medal = "diamond"
-        elif accuracy >= 95:
-            medal = "gold"
-        elif accuracy >= 93:
-            medal = "silver"
-        elif accuracy >= 91:
-            medal = "bronze"
+        # Determine medal by accuracy
+        medal = medal_path = None
+        medal_xp = 0
+        for m_key, m_thresh, m_file, m_xp in self.MEDALS:
+            if accuracy >= m_thresh:
+                medal      = m_key
+                medal_path = m_file
+                medal_xp   = m_xp
+                break
 
-        medal_names = {
-            "bronze": ("Bronze", 25, "static/bnz.png"),
-            "silver": ("Silver", 50, "static/slv.png"),
-            "gold": ("Gold", 50, "static/gld.png"),
-            "diamond": ("Diamond", 100, "static/dmd.png"),
-            "master": ("Master", 150, "static/mtr.png"),
-        }
+        # CPM gate: medal shown but not granted if cpm < 20
+        granted     = (medal is not None) and (cpm >= 20)
+        passed      = granted
 
-        base_xp = 50 if medal else 0
-        medal_xp = medal_names[medal][1] if medal else 0
-        earned_xp = base_xp + medal_xp
-        granted = True
-        boss_damage = 0
-        passed = False
+        base_xp     = 50 if medal else 0
+        earned_xp   = base_xp + medal_xp
 
-        if medal and cpm >= 20:
-            passed = True
-            boss_damage = 15
-        elif medal and cpm < 20:
-            earned_xp = int(earned_xp / 2)
-            granted = False
-        else:
-            granted = False
+        if medal and not granted:
+            earned_xp = earned_xp // 2   # halve if CPM fails
+        if not medal:
+            earned_xp = 0
 
-        if not passed:
-            base_xp = 0
-            medal_xp = medal_xp if medal else 0
-            if medal and cpm < 20:
-                # keep half XP even when medal is not officially granted
-                pass
-            else:
-                earned_xp = 0
+        boss_damage = 15 if granted else 0
 
-        if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
-            logic = self.parent_challenge.logic
-            if earned_xp > 0:
-                logic.add_xp(int(earned_xp))
-            if boss_damage > 0:
-                logic.boss_health = max(0, logic.boss_health - boss_damage)
-            if passed:
-                logic.modes["precision"]["status"] = "done"
-                logic.modes["precision"]["completed"] = True
-                logic.completed_modes_count = sum(
-                    1 for v in logic.modes.values() if v["completed"]
-                )
-                for mk, data in logic.modes.items():
-                    if mk != "crazy_party" and not data["completed"]:
-                        data["status"] = "unlocked"
-            logic.save_progress()
-            self.parent_challenge.update_display()
+        self._update_challenge_state(earned_xp, boss_damage, passed)
+        self._show_results(accuracy, cpm, medal, medal_path, granted, earned_xp, boss_damage, passed)
 
-        self._show_precision_results(
-            correct_chars=self.correct_chars,
-            incorrect_chars=self.incorrect_chars,
-            accuracy=accuracy,
-            cpm=cpm,
-            medal=medal,
-            granted=granted,
-            xp_earned=earned_xp,
-            boss_damage=boss_damage,
-            passed=passed,
-        )
+    def _update_challenge_state(self, earned_xp, boss_damage, passed):
+        if not (self.parent_challenge and hasattr(self.parent_challenge, 'logic')):
+            return
+        logic = self.parent_challenge.logic
 
-    def _show_precision_results(self, correct_chars, incorrect_chars, accuracy,
-                                cpm, medal, granted, xp_earned,
-                                boss_damage, passed):
-        medal_names = {
-            "bronze": ("Bronze", 25, "static/bnz.png"),
-            "silver": ("Silver", 50, "static/slv.png"),
-            "gold": ("Gold", 50, "static/gld.png"),
-            "diamond": ("Diamond", 100, "static/dmd.png"),
-            "master": ("Master", 150, "static/mtr.png"),
+        if earned_xp > 0:
+            logic.add_xp(earned_xp)
+        if boss_damage > 0:
+            logic.boss_health = max(0, logic.boss_health - boss_damage)
+
+        if passed:
+            logic.modes["precision"]["status"]    = "done"
+            logic.modes["precision"]["completed"] = True
+            logic.completed_modes_count = sum(1 for v in logic.modes.values() if v["completed"])
+            for mk, data in logic.modes.items():
+                if mk != "crazy_party" and not data["completed"]:
+                    data["status"] = "unlocked"
+
+        logic.save_progress()
+        self.parent_challenge.update_display()
+
+    def _show_results(self, accuracy, cpm, medal, medal_path,
+                      granted, earned_xp, boss_damage, passed):
+        medal_display = {
+            "bronze": "Bronze", "silver": "Silver",
+            "gold": "Gold", "diamond": "Diamond", "master": "Master",
         }
 
         if self.is_english:
-            title = "PRECISION ARENA RESULTS"
-            accuracy_text = f"Final Accuracy: {accuracy:.1f}%"
-            cpm_text = f"Final CPM: {cpm:.1f}"
-            correct_text = f"Correct Characters: {correct_chars}"
-            incorrect_text = f"Incorrect Characters: {incorrect_chars}"
-            medal_text = f"Medal: {medal.capitalize() if medal else 'None'}"
-            grant_text = "Medal Granted" if granted else "Not Granted"
-            xp_text = f"XP Earned: {xp_earned}"
-            boss_text = f"Boss Health Effect: -{boss_damage}%" if boss_damage else "Boss Health Effect: 0%"
-            state_text = "Run Successful" if passed else "Run Failed"
-            button_text = "Go Back to Challenge Battle"
-            retry_text = "Retry"
-            return_text = "Return to Challenge Battle"
+            title         = "PRECISION ARENA RESULTS"
+            correct_text  = f"Correct Characters: {self.correct_chars}"
+            incorrect_text= f"Incorrect Characters: {self.incorrect_chars}"
+            acc_text      = f"Final Accuracy: {accuracy:.1f}%"
+            cpm_text      = f"Final CPM: {cpm:.1f}"
+            medal_text    = f"Medal: {medal_display.get(medal, 'None')}"
+            grant_text    = ("Medal Granted" if granted
+                             else ("Not Granted - CPM too low" if medal else "No Medal - below 91%"))
+            xp_text       = f"XP Earned: {earned_xp}"
+            boss_text     = f"Boss Health: -{boss_damage}%" if boss_damage else "Boss Health: no change"
+            state_text    = "PASSED" if passed else "FAILED - retry to earn full rewards"
+            retry_text    = "Retry"
+            return_text   = "Return to Challenge Battle"
+            go_back_text  = "Go Back to Challenge Battle"
         else:
-            title = "RÉSULTATS DE LA PRECISION"
-            accuracy_text = f"Précision Finale : {accuracy:.1f}%"
-            cpm_text = f"CPM Final : {cpm:.1f}"
-            correct_text = f"Caractères Corrects : {correct_chars}"
-            incorrect_text = f"Caractères Incorrects : {incorrect_chars}"
-            medal_text = f"Médaille : {medal.capitalize() if medal else 'Aucune'}"
-            grant_text = "Médaille Accordée" if granted else "Non Accordée"
-            xp_text = f"XP Gagnés : {xp_earned}"
-            boss_text = f"Effet Santé Boss : -{boss_damage}%" if boss_damage else "Effet Santé Boss : 0%"
-            state_text = "Réussite" if passed else "Échec"
-            button_text = "Retour au Combat de Défi"
-            retry_text = "Recommencer"
-            return_text = "Retour au Combat de Défi"
+            title         = "RESULTATS PRECISION ARENA"
+            correct_text  = f"Caracteres Corrects : {self.correct_chars}"
+            incorrect_text= f"Caracteres Incorrects : {self.incorrect_chars}"
+            acc_text      = f"Precision Finale : {accuracy:.1f}%"
+            cpm_text      = f"CPM Final : {cpm:.1f}"
+            medal_text    = f"Medaille : {medal_display.get(medal, 'Aucune')}"
+            grant_text    = ("Medaille Accordee" if granted
+                             else ("Non Accordee - CPM insuffisant" if medal else "Aucune Medaille - sous 91%"))
+            xp_text       = f"XP Gagnes : {earned_xp}"
+            boss_text     = f"Sante Boss : -{boss_damage}%" if boss_damage else "Sante Boss : pas de changement"
+            state_text    = "REUSSI" if passed else "ECHOUE - recommencez pour les recompenses"
+            retry_text    = "Recommencer"
+            return_text   = "Retour au Combat de Defi"
+            go_back_text  = "Retour au Combat de Defi"
 
         dlg = QDialog(self)
         dlg.setWindowTitle(title)
@@ -1150,6 +2114,7 @@ class PrecisionArenaMode(GenericTypingMode):
         dlg.setStyleSheet(self.styleSheet())
 
         layout = QVBoxLayout()
+
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
         title_label.setStyleSheet(
             "font-size: 26px; font-weight: bold; color: #0fecb0;"
@@ -1157,56 +2122,67 @@ class PrecisionArenaMode(GenericTypingMode):
         )
         layout.addWidget(title_label)
 
-        icon_path = None
-        if medal:
-            icon_path = medal_names[medal][2]
+        stats_text = "\n".join([
+            correct_text, incorrect_text, acc_text, cpm_text,
+            medal_text, grant_text, xp_text, boss_text, state_text,
+        ])
+        stats_browser = AccessibleBrowser(text=stats_text, accessible_text=stats_text)
+        stats_browser.setMinimumHeight(260)
+        layout.addWidget(stats_browser)
 
-        summary = (
-            f"{correct_text}\n{incorrect_text}\n{accuracy_text}\n{cpm_text}\n"
-            f"{medal_text}\n{grant_text}\n{xp_text}\n{boss_text}\n{state_text}"
-        )
-        summary_display = AccessibleBrowser(text=summary, accessible_text=summary)
-        summary_display.setMinimumHeight(240)
-        layout.addWidget(summary_display)
+        # Medal icon (or black square placeholder)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_label = QLabel()
+        icon_label.setAlignment(Qt.AlignCenter)
+        if medal and medal_path:
+            full_path = os.path.join(base_dir, medal_path)
+            if os.path.exists(full_path):
+                pix = QPixmap(full_path).scaled(
+                    100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                icon_label.setPixmap(pix)
+            else:
+                icon_label.setFixedSize(60, 60)
+                icon_label.setStyleSheet("background-color: #333;")
+        else:
+            icon_label.setFixedSize(40, 40)
+            icon_label.setStyleSheet("background-color: black;")
+        layout.addWidget(icon_label)
 
-        if icon_path and os.path.exists(icon_path):
-            icon_label = QLabel()
-            pix = QPixmap(icon_path).scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            icon_label.setPixmap(pix)
-            icon_label.setAlignment(Qt.AlignCenter)
-            layout.addWidget(icon_label)
-        elif not medal:
-            placeholder = AccessibleLabel(
-                visual_text=" ", accessible_text="No medal earned"
-            )
-            placeholder.setStyleSheet(
-                "background-color: black; min-width: 60px; min-height: 60px;"
-            )
-            layout.addWidget(placeholder)
-
-        buttons = QHBoxLayout()
+        # Buttons
+        btn_row = QHBoxLayout()
         if not passed:
             btn_retry = QPushButton(retry_text)
-            btn_retry.clicked.connect(lambda: self._retry_precision(dlg))
-            buttons.addWidget(btn_retry)
-
-            btn_return = QPushButton(return_text)
-            btn_return.clicked.connect(lambda: self._close_precision_and_return(dlg))
-            buttons.addWidget(btn_return)
+            btn_retry.clicked.connect(lambda: self._retry(dlg))
+            btn_row.addWidget(btn_retry)
+            btn_back = QPushButton(return_text)
+            btn_back.clicked.connect(lambda: self._close_and_return(dlg))
+            btn_row.addWidget(btn_back)
         else:
-            btn_return = QPushButton(button_text)
-            btn_return.clicked.connect(lambda: self._close_precision_and_return(dlg))
-            buttons.addWidget(btn_return)
+            btn_go = QPushButton(go_back_text)
+            btn_go.clicked.connect(lambda: self._close_and_return(dlg))
+            btn_row.addWidget(btn_go)
 
-        layout.addLayout(buttons)
+        layout.addLayout(btn_row)
         dlg.setLayout(layout)
         dlg.exec_()
 
-    def _retry_precision(self, dialog):
+    def _retry(self, dialog):
+        """Reset state and restart session without closing window."""
         dialog.accept()
-        self.start_session()
+        self.session_elapsed      = 0
+        self.correct_chars        = 0
+        self.incorrect_chars      = 0
+        self.current_phase        = "random"
+        self.phase_weights_built  = False
+        self.session_letter_stats = {}
+        self._init_precision_csv()
+        self._refresh_stats_display()
+        self.input_field.setEnabled(True)
+        self.session_timer.start(1000)
+        self._next_target()
 
-    def _close_precision_and_return(self, dialog):
+    def _close_and_return(self, dialog):
         dialog.accept()
         if self.parent_challenge:
             self.parent_challenge.pages.setCurrentIndex(1)
@@ -1214,32 +2190,35 @@ class PrecisionArenaMode(GenericTypingMode):
         self.close()
 
     def leave_session(self):
+        """Manual exit: delete session CSV, apply -50 XP penalty."""
         self.session_timer.stop()
-        self.input_field.setDisabled(True)
+        self.input_field.setEnabled(False)
+
+        # Delete session CSV only on manual leave; history CSV is kept
         if self.precision_csv_path and os.path.exists(self.precision_csv_path):
             try:
                 os.remove(self.precision_csv_path)
             except Exception:
                 pass
+
         if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
             logic = self.parent_challenge.logic
             logic.xp_balance = max(0, logic.xp_balance - 50)
             logic.save_progress()
             self.parent_challenge.update_display()
+
         if self.base_logic.speaker:
-            msg = (
-                "Precision Arena exited. 50 XP penalty applied."
-                if self.is_english else
-                "Precision Arena quittée. Pénalité de 50 XP appliquée."
-            )
+            msg = ("Precision Arena exited. 50 XP penalty applied."
+                   if self.is_english else
+                   "Precision Arena quittee. Penalite de 50 XP appliquee.")
             self.base_logic.speaker.output(msg)
+
         if self.parent_challenge:
             self.parent_challenge.pages.setCurrentIndex(1)
         self.close()
 
     def closeEvent(self, event):
         self.session_timer.stop()
-        self.message_timer.stop()
         event.accept()
 
 
@@ -1693,12 +2672,22 @@ class Week6UI(QWidget):
             self._start_warmup_typing()
             return
 
+        # Combo  -  launch actual session
+        if mode_key == "combo":
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(
+                    self.strings["mode_started"].format(name=mode["name"])
+                )
+            self._start_combo_typing()
+            return
+
+        # Precision Arena  -  launch actual session
         if mode_key == "precision":
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(
                     self.strings["mode_started"].format(name=mode["name"])
                 )
-            self._start_precision_arena()
+            self._start_precision_typing()
             return
 
         # Other modes (placeholder until implemented)
@@ -1732,62 +2721,15 @@ class Week6UI(QWidget):
         self.warmup_welcome.setWindowState(Qt.WindowMaximized)
         self.warmup_welcome.show()
 
-    def _start_precision_arena(self):
-        self.precision_intro = QDialog(self)
-        self.precision_intro.setWindowTitle(
-            "Precision Arena" if self.is_english else "Precision Arena"
+    def _start_combo_typing(self):
+        """Show the combo welcome page as a separate maximised window."""
+        self.combo_welcome = ComboWelcomePage(self, is_english=self.is_english)
+        self.combo_welcome.setStyleSheet(self.styleSheet())
+        self.combo_welcome.setWindowTitle(
+            "Combo Rush" if self.is_english else "Combo Rush"
         )
-        self.precision_intro.setMinimumWidth(560)
-        self.precision_intro.setStyleSheet(self.styleSheet())
-
-        layout = QVBoxLayout()
-        if self.is_english:
-            intro_text = (
-                "Precision Arena is a 7-minute non-stop typing marathon.\n"
-                "The first 4 minutes are random. The final 3 minutes adapt to your weak letters.\n"
-                "No timeouts are used. Accuracy decides your medal and CPM must be at least 20."
-            )
-            start_text = "I'm ready for it!"
-        else:
-            intro_text = (
-                "Precision Arena est un marathon de frappe de 7 minutes sans arrêt.\n"
-                "Les 4 premières minutes sont aléatoires. Les 3 dernières s'adaptent à vos lettres faibles.\n"
-                "Aucun délai d'expiration n'est utilisé. La précision décide de votre médaille et le CPM doit être d'au moins 20."
-            )
-            start_text = "Je suis prêt !"
-
-        instructions = AccessibleBrowser(text=intro_text, accessible_text=intro_text)
-        instructions.setMinimumHeight(150)
-        layout.addWidget(instructions)
-
-        btn_start = QPushButton(start_text)
-        btn_start.clicked.connect(self._launch_precision_session)
-        layout.addWidget(btn_start)
-
-        btn_cancel = QPushButton(
-            "Cancel" if self.is_english else "Annuler"
-        )
-        btn_cancel.clicked.connect(self.precision_intro.reject)
-        layout.addWidget(btn_cancel)
-
-        self.precision_intro.setLayout(layout)
-        self.precision_intro.exec_()
-
-    def _launch_precision_session(self):
-        self.precision_intro.accept()
-        self.precision_mode = PrecisionArenaMode(
-            base_logic=self.base_logic,
-            mode_name="Precision Arena",
-            is_english=self.is_english,
-            parent=self,
-        )
-        self.precision_mode.setStyleSheet(self.styleSheet())
-        self.precision_mode.setWindowTitle(
-            "Precision Arena" if self.is_english else "Precision Arena"
-        )
-        self.precision_mode.setWindowState(Qt.WindowMaximized)
-        self.precision_mode.show()
-        self.precision_mode.start_session()
+        self.combo_welcome.setWindowState(Qt.WindowMaximized)
+        self.combo_welcome.show()
 
     def launch_warmup_session(self):
         """Called by WarmupWelcomePage when user presses 'I Am Ready'."""
@@ -1806,6 +2748,50 @@ class Week6UI(QWidget):
         self.warmup_mode.setWindowState(Qt.WindowMaximized)
         self.warmup_mode.show()
         self.warmup_mode.start_session()
+
+    def launch_combo_session(self):
+        """Called by ComboWelcomePage when user presses 'I Am Ready'."""
+        self.combo_mode = ComboTypingMode(
+            base_logic=self.base_logic,
+            is_english=self.is_english,
+            parent=self,
+        )
+        self.combo_mode.setStyleSheet(self.styleSheet())
+        self.combo_mode.setWindowTitle(
+            "Combo Rush  -  Typing Session"
+            if self.is_english else
+            "Combo Rush  -  Session de Frappe"
+        )
+        self.combo_mode.setWindowState(Qt.WindowMaximized)
+        self.combo_mode.show()
+        self.combo_mode.start_session()
+
+    def _start_precision_typing(self):
+        """Show the Precision Arena welcome page as a separate maximised window."""
+        self.precision_welcome = PrecisionWelcomePage(self, is_english=self.is_english)
+        self.precision_welcome.setStyleSheet(self.styleSheet())
+        self.precision_welcome.setWindowTitle(
+            "Precision Arena" if self.is_english else "Precision Arena"
+        )
+        self.precision_welcome.setWindowState(Qt.WindowMaximized)
+        self.precision_welcome.show()
+
+    def launch_precision_session(self):
+        """Called by PrecisionWelcomePage when user presses 'I am ready for it!'."""
+        self.precision_mode = PrecisionArenaMode(
+            base_logic=self.base_logic,
+            is_english=self.is_english,
+            parent=self,
+        )
+        self.precision_mode.setStyleSheet(self.styleSheet())
+        self.precision_mode.setWindowTitle(
+            "Precision Arena  -  Typing Session"
+            if self.is_english else
+            "Precision Arena  -  Session de Frappe"
+        )
+        self.precision_mode.setWindowState(Qt.WindowMaximized)
+        self.precision_mode.show()
+        self.precision_mode.start_session()
 
     def update_display(self):
         """Refresh all stat widgets from current logic state."""
