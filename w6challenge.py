@@ -31,6 +31,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLi
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap
 from weeks import symbol_pronounciation
+from sentence_mode import SentenceMode
 
 
 # ============= ACCESSIBLE WIDGETS =============
@@ -118,6 +119,7 @@ class WarmupWelcomePage(QWidget):
                 "Ready? Let's begin!"
             )
             button_text  = "I Am Ready"
+            cancel_text  = "Not yet"
         else:
             title_text   = "PORTE RÉCHAUFFEMENT  -  Phase d'Entraînement 1"
             welcome_text = "Bienvenue à l'Entraînement"
@@ -129,6 +131,7 @@ class WarmupWelcomePage(QWidget):
                 "Prêt ? Commençons !"
             )
             button_text  = "Je Suis Prêt"
+            cancel_text  = "Pas encore"
 
         title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
         title.setStyleSheet(
@@ -148,10 +151,16 @@ class WarmupWelcomePage(QWidget):
         inst_field.setMinimumHeight(180)
         layout.addWidget(inst_field)
 
+        btn_row = QHBoxLayout()
         btn_ready = QPushButton(button_text)
         btn_ready.clicked.connect(self._launch)
-        layout.addWidget(btn_ready)
+        btn_row.addWidget(btn_ready)
 
+        btn_cancel = QPushButton(cancel_text)
+        btn_cancel.clicked.connect(self.close)
+        btn_row.addWidget(btn_cancel)
+
+        layout.addLayout(btn_row)
         layout.addStretch()
         self.setLayout(layout)
 
@@ -658,6 +667,7 @@ class ComboWelcomePage(QWidget):
                 "Below 70%: Retry later. At or above 70%: +40 XP and -15% boss health!"
             )
             button_text = "I Am Ready"
+            cancel_text = "Not yet"
         else:
             title_text = "COMBO RUSH  -  Défi de Multiplicateur par Étape"
             welcome_text = "Bienvenue au Mode Combo"
@@ -682,6 +692,7 @@ class ComboWelcomePage(QWidget):
                 "Moins de 70 % : Réessayez plus tard. 70 % ou plus : +40 XP et -15 % de santé du boss !"
             )
             button_text = "Je Suis Prêt"
+            cancel_text = "Pas encore"
 
         title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
         title.setStyleSheet(
@@ -701,10 +712,16 @@ class ComboWelcomePage(QWidget):
         inst_field.setMinimumHeight(300)
         layout.addWidget(inst_field)
 
+        btn_row = QHBoxLayout()
         btn_ready = QPushButton(button_text)
         btn_ready.clicked.connect(self._launch)
-        layout.addWidget(btn_ready)
+        btn_row.addWidget(btn_ready)
 
+        btn_cancel = QPushButton(cancel_text)
+        btn_cancel.clicked.connect(self.close)
+        btn_row.addWidget(btn_cancel)
+
+        layout.addLayout(btn_row)
         layout.addStretch()
         self.setLayout(layout)
 
@@ -1542,6 +1559,7 @@ class PrecisionWelcomePage(QWidget):
                 "Failed run: retry anytime. Progress is always saved."
             )
             button_text  = "I'm ready for it!"
+            cancel_text  = "Not yet"
         else:
             title_text   = "PRECISION ARENA - Marathon de Precision"
             instructions = (
@@ -1562,6 +1580,7 @@ class PrecisionWelcomePage(QWidget):
                 "Echec : recommencez quand vous voulez."
             )
             button_text  = "Je suis pret !"
+            cancel_text  = "Pas encore"
 
         title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
         title.setStyleSheet(
@@ -1574,10 +1593,16 @@ class PrecisionWelcomePage(QWidget):
         inst_field.setMinimumHeight(380)
         layout.addWidget(inst_field)
 
+        btn_row = QHBoxLayout()
         btn_ready = QPushButton(button_text)
         btn_ready.clicked.connect(self._launch)
-        layout.addWidget(btn_ready)
+        btn_row.addWidget(btn_ready)
 
+        btn_cancel = QPushButton(cancel_text)
+        btn_cancel.clicked.connect(self.close)
+        btn_row.addWidget(btn_cancel)
+
+        layout.addLayout(btn_row)
         layout.addStretch()
         self.setLayout(layout)
 
@@ -2746,6 +2771,15 @@ class Week6UI(QWidget):
             self._start_precision_typing()
             return
 
+        # Sentence Mode  -  launch actual session
+        if mode_key == "sentence":
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(
+                    self.strings["mode_started"].format(name=mode["name"])
+                )
+            self._start_sentence_mode()
+            return
+
         # Other modes (placeholder until implemented)
         if not mode["completed"]:
             self.logic.mark_mode_complete(mode_key)
@@ -2848,6 +2882,20 @@ class Week6UI(QWidget):
         self.precision_mode.setWindowState(Qt.WindowMaximized)
         self.precision_mode.show()
         self.precision_mode.start_session()
+
+    def _start_sentence_mode(self):
+        self.sentence_mode = SentenceMode(
+            base_logic=self.base_logic,
+            is_english=self.is_english,
+            parent=self,
+        )
+        self.sentence_mode.setStyleSheet(self.styleSheet())
+        self.sentence_mode.setWindowTitle(
+            "Sentence Mode" if self.is_english else "Mode Phrase"
+        )
+        self.sentence_mode.setWindowState(Qt.WindowMaximized)
+        self.sentence_mode.show()
+        self.sentence_mode.start_session()
 
     def update_display(self):
         """Refresh all stat widgets from current logic state."""
