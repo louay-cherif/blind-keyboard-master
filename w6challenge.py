@@ -1,4 +1,3 @@
-
 # Blind Keyboard Master - keyboard learning app accessible for visually impaired people
 # Copyright (C) 2026 Louay Cherif
 #
@@ -1597,6 +1596,7 @@ class PrecisionArenaMode(QWidget):
     Counts characters, not attempts.
     Medal system based on accuracy + CPM requirement.
     First 4 min: random. Final 3 min: adaptive weighted.
+    4-char targets are real French words, each shown at most once per session.
     """
 
     SESSION_DURATION = 420   # 7 minutes in seconds
@@ -1609,6 +1609,28 @@ class PrecisionArenaMode(QWidget):
         ("gold",    95, "static/gld.png",  50),
         ("silver",  93, "static/slv.png",  50),
         ("bronze",  91, "static/bnz.png",  25),
+    ]
+
+    # Real 4-letter French words (no accents, pure ASCII).
+    # Each appears at most once per session; when pool runs out,
+    # the slot silently falls back to a 3-char target.
+    FOUR_CHAR_WORDS = [
+        "chat", "main", "pied", "nuit", "jour", "lune", "rose", "bleu",
+        "vert", "noir", "gris", "beau", "fort", "vrai", "faux", "bois",
+        "parc", "port", "pont", "tour", "dame", "vent", "sage", "seul",
+        "fond", "aide", "chef", "ciel", "clef", "coup", "dent", "doux",
+        "drap", "feux", "fils", "flot", "four", "gare", "gout", "gros",
+        "lait", "lame", "lien", "lieu", "lion", "lire", "loup", "luxe",
+        "miel", "mois", "mort", "naif", "nain", "neuf", "noix", "note",
+        "once", "ours", "page", "pain", "paon", "part", "peur", "pile",
+        "plan", "plat", "pois", "polo", "pore", "pose", "prix", "prof",
+        "puce", "race", "rage", "raid", "rail", "rang", "rime", "ring",
+        "rire", "rive", "robe", "rock", "role", "rond", "roue", "roux",
+        "rude", "ruse", "sain", "sale", "sang", "saut", "sein", "sens",
+        "sire", "site", "soie", "soir", "sole", "sort", "sous", "surf",
+        "tact", "taux", "taxi", "toit", "tome", "tort", "trek", "trio",
+        "trop", "tube", "type", "vain", "veau", "velo", "vers", "vice",
+        "vide", "viol", "vite", "voie", "vote", "yoga", "zinc", "zone",
     ]
 
     def __init__(self, base_logic, is_english=True, parent=None):
@@ -1625,6 +1647,9 @@ class PrecisionArenaMode(QWidget):
         # Stats - character-based, not attempt-based
         self.correct_chars        = 0
         self.incorrect_chars      = 0
+
+        # 4-char word pool for this session — shuffled, each used once
+        self.four_char_pool       = []
 
         # Adaptive phase
         self.phase_weights_built  = False
@@ -1735,6 +1760,10 @@ class PrecisionArenaMode(QWidget):
         self.phase_weights_built  = False
         self.session_letter_stats = {}
 
+        # Shuffle a fresh copy of the word pool for this session
+        self.four_char_pool = list(self.FOUR_CHAR_WORDS)
+        random.shuffle(self.four_char_pool)
+
         self._init_paths()
         self._init_precision_csv()
         self._refresh_stats_display()
@@ -1803,9 +1832,21 @@ class PrecisionArenaMode(QWidget):
     # ---- Target generation ----
 
     def _generate_target(self):
-        """Weighted length (30/40/20/10 for 1/2/3/4) + weighted char pool."""
+        """
+        Pick a target length then build the target.
+        Weights: 33% 1-char, 43% 2-char, 17% 3-char, 7% 4-char.
+        4-char slot pulls a real French word from the session pool (no repeat).
+        If the pool is exhausted the slot silently becomes a 3-char target.
+        """
         lengths = [1, 2, 3, 4]
-        length  = random.choices(lengths, weights=[30, 40, 20, 10], k=1)[0]
+        length  = random.choices(lengths, weights=[33, 43, 17, 7], k=1)[0]
+
+        if length == 4:
+            if self.four_char_pool:
+                return self.four_char_pool.pop()   # already shuffled, pop from end
+            else:
+                length = 3   # pool exhausted - fall back silently
+
         return "".join(self._pick_char() for _ in range(length))
 
     def _pick_char(self):
@@ -1833,28 +1874,41 @@ class PrecisionArenaMode(QWidget):
         return char
 
     def _next_target(self):
-        """Show next target. For long targets, delay enabling input until announcement done."""
+        """
+        Show next target and announce it.
+        All targets are spelled letter by letter, exactly like word practice
+        in the standard weeks. Input is disabled during spelling for targets
+        of length 2 or more, then re-enabled with a beep so the screen reader
+        is never interrupted by a focus shift mid-announcement.
+        Single-char targets are announced instantly (no delay needed).
+        """
         self.current_target = self._generate_target()
-        announcement        = ", ".join(self._get_char_announcement(c) for c in self.current_target)
+
+        # Always spell every target letter by letter - words, couples, triples, singles
+        char_announcements = [self._get_char_announcement(c) for c in self.current_target]
+        announcement = ", ".join(char_announcements)
+
         self.target_display.update_text(self.current_target, announcement)
 
         self.input_field.blockSignals(True)
         self.input_field.clear()
         self.input_field.blockSignals(False)
 
-        if len(self.current_target) >= 3 and self.base_logic.speaker:
-            # 3-4 chars: disable input during announcement, enable with beep after delay
-            self.input_field.setEnabled(False)
-            self.base_logic.speaker.output(announcement)
-            total_ann_len = sum(len(self._get_char_announcement(c)) for c in self.current_target)
-            delay = total_ann_len * 70 + 400
-            QTimer.singleShot(delay, self._enable_input_with_beep)
-        else:
-            # 1-2 chars: announce and allow typing immediately
+        if len(self.current_target) == 1:
+            # Single char: announce and enable immediately - no delay needed
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(announcement)
             self.input_field.setEnabled(True)
             self.input_field.setFocus()
+        else:
+            # 2, 3, 4 chars: disable input during spelling, re-enable with beep after delay
+            # Delay calculated from total announcement text length so TTS finishes first
+            self.input_field.setEnabled(False)
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(announcement)
+            total_ann_len = sum(len(a) for a in char_announcements)
+            delay = total_ann_len * 65 + 400
+            QTimer.singleShot(delay, self._enable_input_with_beep)
 
     def _enable_input_with_beep(self):
         winsound.Beep(1000, 100)
@@ -2176,6 +2230,8 @@ class PrecisionArenaMode(QWidget):
         self.current_phase        = "random"
         self.phase_weights_built  = False
         self.session_letter_stats = {}
+        self.four_char_pool       = list(self.FOUR_CHAR_WORDS)
+        random.shuffle(self.four_char_pool)
         self._init_precision_csv()
         self._refresh_stats_display()
         self.input_field.setEnabled(True)
