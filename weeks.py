@@ -231,6 +231,40 @@ sentences_fr = [
     "Le dernier paragraphe était facile à comprendre."
 ]
 
+# list of words used for week6 challenge survival mode and crazy party
+w6words = [
+    "chat", "chien", "maison", "soleil", "lune", "pain", "fromage", "eau", "feu", "jeu",
+    "porte", "fenêtre", "table", "chaise", "lit", "télé", "ordi", "livre", "cahier", "stylo",
+    "gomme", "règle", "ciseaux", "colle", "école", "élève", "prof", "cours", "note", "devoir",
+    "semaine", "mois", "année", "jour", "nuit", "midi", "soir", "matin", "heure", "minute",
+    "ami", "amie", "frère", "sœur", "père", "mère", "oncle", "tante", "cousin", "famille",
+    "jardin", "arbre", "fleur", "herbe", "ciel", "nuage", "pluie", "vent", "neige", "glace",
+    "mer", "mont", "rivière", "lac", "île", "sable", "roche", "caillou", "chemin", "route",
+    "ville", "village", "rue", "place", "parc", "pont", "église", "hôpital", "gare", "train",
+    "bus", "vélo", "voiture", "moto", "avion", "bateau", "camion", "taxi", "métro", "rouge",
+    "bleu", "vert", "jaune", "noir", "blanc", "gris", "rose", "violet", "orange", "petit",
+    "grand", "beau", "laid", "jeune", "vieux", "heureux", "triste", "fatigué", "content", "ouvrir",
+    "fermer", "manger", "boire", "dormir", "courir", "marcher", "parler", "écouter", "regarder",
+    "voir", "entendre", "sentir", "toucher", "lire", "écrire", "compter", "dessiner", "jouer",
+    "travailler", "étudier", "apprendre", "oublier", "rêver", "penser", "savoir", "pouvoir",
+    "vouloir", "devoir", "aller", "venir", "partir", "rester", "monter", "descendre", "entrer",
+    "sortir", "passer", "arrêter", "continuer", "commencer", "finir", "poser", "lever", "mettre",
+    "prendre", "donner", "recevoir", "acheter", "vendre", "porter", "jeter", "casser", "réparer",
+    "nettoyer", "laver", "sécher", "allumer", "éteindre", "sonner", "crier", "chanter", "danser",
+    "rire", "pleurer", "sourire", "téléphoner", "envoyer", "écran", "souris", "clavier", "touche",
+    "lettre", "mot", "phrase", "point", "virgule", "espace", "entrée", "maj", "ctrl", "alt",
+    "suppr", "pomme", "poire", "cerise", "raisin", "fraise", "citron", "légume", "carotte", "tomate",
+    "salade", "oignon", "ail", "poivre", "sel", "sucre", "farine", "lait", "beurre", "crème",
+    "yaourt", "œuf", "viande", "poisson", "riz", "pâtes", "soupe", "café", "thé", "jus",
+    "bière", "vin", "chocolat", "bonbon", "gâteau", "tarte", "crêpe", "gaufre", "miel", "confiture",
+    "croissant", "baguette", "sandwich", "pizza", "quiche", "omelette", "mousse", "glace", "sorbet",
+    "coca", "menthe", "pastèque", "melon", "abricot", "pêche", "kiwi", "mangue", "ananas", "figue",
+    "datte", "noix", "noisette", "amande", "cacahuète", "châtaigne", "marron", "champignon", "courgette",
+    "aubergine", "poivron", "concombre", "radis", "céleri", "poireau", "artichaut", "asperge", "brocoli",
+    "chou", "navet", "potiron", "citrouille", "patate", "igname", "soja", "lentille", "haricot",
+    "pois", "fève", "orge", "avoine", "seigle", "maïs", "blé", "quinoa", "sarrasin", "millet"
+]
+
 # words for week 1
 w1words = [
     "sad", "dad", "fad", "lad", "jam", "ham", "mad", "had", "gas", "lag",
