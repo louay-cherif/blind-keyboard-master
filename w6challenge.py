@@ -94,6 +94,24 @@ class AccessibleBrowser(QTextBrowser):
         )
 
 
+class Week6TypingInput(QLineEdit):
+    """Shared Week 6 typing field with Ctrl-repeat support."""
+
+    def __init__(self, mode, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mode = mode
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Control:
+            self.mode.repeat_current_target()
+            return
+
+        if hasattr(self.mode, 'try_resume_timer_on_key'):
+            self.mode.try_resume_timer_on_key(event)
+
+        super().keyPressEvent(event)
+
+
 # ============= WARMUP WELCOME PAGE =============
 
 class WarmupWelcomePage(QWidget):
@@ -192,6 +210,7 @@ class GenericTypingMode(QWidget):
         self.target_start_time  = None
         self.target_timeout     = 2.0
         self._original_target   = ""
+        self._pause_timer_until_typing = False
 
         # Stats
         self.correct_count   = 0
@@ -269,7 +288,7 @@ class GenericTypingMode(QWidget):
         layout.addWidget(self.target_display)
 
         # Typing input
-        self.input_field = QLineEdit()
+        self.input_field = Week6TypingInput(self)
         self.input_field.textChanged.connect(self._on_input_changed)
         layout.addWidget(self.input_field)
 
@@ -290,6 +309,21 @@ class GenericTypingMode(QWidget):
         self.message_timer = QTimer()
         self.message_timer.setSingleShot(True)
         self.message_timer.timeout.connect(self._clear_message_display)
+
+    def _get_warmup_announcement(self):
+        if self.current_target in symbol_pronounciation:
+            return symbol_pronounciation[self.current_target]
+        if self.current_target.isupper():
+            return f"{self.current_target.lower()} majuscule"
+        return self.current_target
+
+    def repeat_current_target(self):
+        announcement = self._get_warmup_announcement()
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(announcement)
+
+    def try_resume_timer_on_key(self, event):
+        return False
 
     # ---- Session lifecycle ----
 
@@ -755,8 +789,8 @@ class ComboTypingMode(GenericTypingMode):
         self.current_stage = 1
         self.stage_start_time = None
         self.stage_duration = 300  # 5 minutes per stage
-        self.combo_score = 1.0
-        self.highest_combo = 1.0
+        self.combo_score = 0.1
+        self.highest_combo = 0.1
         self.xp_conversion_rates = {1: 0.1, 2: 0.2, 3: 0.4}  # Stage -> multiplier
         self.total_session_xp = 0.0
         self.session_complete = False
@@ -846,7 +880,7 @@ class ComboTypingMode(GenericTypingMode):
         layout.addWidget(self.target_display)
 
         # Typing input
-        self.input_field = QLineEdit()
+        self.input_field = Week6TypingInput(self)
         self.input_field.textChanged.connect(self._on_input_changed)
         layout.addWidget(self.input_field)
 
@@ -861,8 +895,8 @@ class ComboTypingMode(GenericTypingMode):
         self.session_start_time = time.time()
         self.stage_start_time = time.time()
         self.current_stage = 1
-        self.combo_score = 1.0
-        self.highest_combo = 1.0
+        self.combo_score = 0.1
+        self.highest_combo = 0.1
         self.total_session_xp = 0.0
         self.correct_count = 0
         self.incorrect_count = 0
@@ -938,6 +972,7 @@ class ComboTypingMode(GenericTypingMode):
         self.target_timer.stop()
         self.current_target = self.get_random_target()
         self.target_start_time = time.time()
+        self._pause_timer_until_typing = False
 
         # Constant 3-second timeout for all combos
         self.target_timeout = 3.0
@@ -948,33 +983,24 @@ class ComboTypingMode(GenericTypingMode):
         self.input_field.blockSignals(True)
         self.input_field.clear()
         self.input_field.blockSignals(False)
-
-        if self.current_stage == 1:
-            # Single char: announce and enable input immediately
-            if self.base_logic.speaker:
-                self.base_logic.speaker.output(announcement)
-            self.input_field.setEnabled(True)
-            self.input_field.setFocus()
-            self.target_timer.start(int(self.target_timeout * 1000))
-        else:
-            # Multi-char: disable input during announcement so screen reader
-            # is not interrupted by focus shift. Enable with beep after delay,
-            # matching standard word practice behaviour in existing weeks.
-            self.input_field.setEnabled(False)
-            if self.base_logic.speaker:
-                self.base_logic.speaker.output(announcement)
-            # Delay: roughly 60ms per character of announcement text + 400ms buffer
-            delay = len(announcement) * 60 + 400
-            QTimer.singleShot(delay, self._enable_combo_input)
-
-    def _enable_combo_input(self):
-        """Called after announcement delay for stages 2+. Mirrors start_counting()."""
-        winsound.Beep(1000, 150)
         self.input_field.setEnabled(True)
         self.input_field.setFocus()
-        # Reset target timing to now so timeout is measured from when user can actually type
-        self.target_start_time = time.time()
-        self.target_timer.start(int(self.target_timeout * 1000))
+
+        if self.current_stage == 1 or len(self.current_target) <= 2:
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(announcement)
+            self.target_timer.start(int(self.target_timeout * 1000))
+        else:
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(announcement)
+            self._pause_timer_until_typing = True
+
+    def _enable_combo_input(self):
+        """Compatibility stub; combo now resumes timing on first typed key."""
+        self.input_field.setEnabled(True)
+        self.input_field.setFocus()
+        if not self._pause_timer_until_typing:
+            self.target_timer.start(int(self.target_timeout * 1000))
 
     def _get_combo_announcement(self, combo):
         """Convert combo string to screen reader announcement."""
@@ -988,6 +1014,28 @@ class ComboTypingMode(GenericTypingMode):
                 parts.append(char)
         return ", ".join(parts)
 
+    def repeat_current_target(self):
+        if not self.current_target:
+            return
+        announcement = self._get_combo_announcement(self.current_target)
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(announcement)
+        if len(self.current_target) > 2:
+            self._pause_timer_until_typing = True
+            self.target_timer.stop()
+
+    def try_resume_timer_on_key(self, event):
+        if not self._pause_timer_until_typing:
+            return False
+        if event.key() == Qt.Key_Control:
+            return False
+        if not event.text():
+            return False
+        self._pause_timer_until_typing = False
+        self.target_start_time = time.time()
+        self.target_timer.start(int(self.target_timeout * 1000))
+        return False
+
     def _on_input_changed(self, text):
         """Handle typing input - check for combo match."""
         if not text:
@@ -999,20 +1047,20 @@ class ComboTypingMode(GenericTypingMode):
             # Correct - exact match
             self.target_timer.stop()
             typing_time = time.time() - self.target_start_time
-            
+
             winsound.Beep(1500, 100)
             self.correct_count += 1
-            
+
             # Double the combo score, rounded to 2dp to avoid float drift
             self.combo_score = round(self.combo_score * 2, 2)
-            
-            # Cap at 128 - auto-convert integer part to XP and reset to 1
+
+            # Cap at 128 - auto-convert integer part to XP and reset to 0.1
             if self.combo_score >= 128:
                 multiplier = self.get_xp_multiplier(self.current_stage)
                 xp_gained = round(int(self.combo_score) * multiplier, 1)
                 self.total_session_xp += xp_gained
                 self.xp_earned = self.total_session_xp
-                self.combo_score = 1.0
+                self.combo_score = 0.1
                 if self.base_logic.speaker:
                     msg = (
                         f"Combo cap! {xp_gained} XP converted."
@@ -1020,45 +1068,59 @@ class ComboTypingMode(GenericTypingMode):
                         f"Plafond combo ! {xp_gained} XP convertis."
                     )
                     self.base_logic.speaker.output(msg)
-            
+
             # Track highest combo reached
             if self.combo_score > self.highest_combo:
                 self.highest_combo = self.combo_score
-            
+
             # Log attempt with current score after doubling
             self._log_combo_attempt(self.current_target, "correct", typing_time, self.combo_score)
-            
+
             self._update_displays()
             self._next_target()
+            return
 
-        elif len(text) > len(self.current_target):
-            # User typed more characters than the target - mark as incorrect
+        if not self.current_target.startswith(typed):
             self.target_timer.stop()
             winsound.Beep(400, 200)
             self.incorrect_count += 1
-            
-            # Divide score by 3, rounded to 2dp to prevent infinite float expansion
+
             self.combo_score = round(self.combo_score / 3.0, 2)
-            # Minimum floor of 0.01 so score never reaches exactly zero
             if self.combo_score < 0.01:
                 self.combo_score = 0.01
-            
-            # Log attempt with current score after division
+
             self._log_combo_attempt(self.current_target, "incorrect", None, self.combo_score)
-            
             self._update_displays()
             self.input_field.blockSignals(True)
             self.input_field.clear()
             self.input_field.blockSignals(False)
             self._next_target()
+            return
+
+        if len(typed) > len(self.current_target):
+            self.target_timer.stop()
+            winsound.Beep(400, 200)
+            self.incorrect_count += 1
+
+            self.combo_score = round(self.combo_score / 3.0, 2)
+            if self.combo_score < 0.01:
+                self.combo_score = 0.01
+
+            self._log_combo_attempt(self.current_target, "incorrect", None, self.combo_score)
+            self._update_displays()
+            self.input_field.blockSignals(True)
+            self.input_field.clear()
+            self.input_field.blockSignals(False)
+            self._next_target()
+            return
 
     def _on_target_timeout(self):
-        """Handle timeout - reset score to 1."""
+        """Handle timeout - reset score to 0.1."""
         winsound.Beep(600, 300)
         self.timeout_count += 1
         
-        # Reset score to 1 on timeout
-        self.combo_score = 1.0
+        # Reset score to 0.1 on timeout
+        self.combo_score = 0.1
         
         self._log_combo_attempt(self.current_target, "timeout", None, self.combo_score)
         
@@ -1102,7 +1164,7 @@ class ComboTypingMode(GenericTypingMode):
             # Transition from mandatory stages (1->2, 2->3)
             self.current_stage += 1
             self.stage_start_time = time.time()
-            self.combo_score = 1.0  # Reset score for new stage
+            self.combo_score = 0.1  # Reset score for new stage
             
             stage_names = {
                 1: ("Stage 1 - Single Character",      "Etape 1 - Caractere Unique"),
@@ -1219,9 +1281,9 @@ class ComboTypingMode(GenericTypingMode):
             logic.boss_health = max(0, logic.boss_health - 5)
 
         # Move to next bonus stage
-        self.combo_score = 1.0  # Reset for new stage
+        self.combo_score = 0.1  # Reset for new stage
         self.current_stage += 1
-        self.highest_combo = 1.0  # Reset highest for new stage
+        self.highest_combo = 0.1  # Reset highest for new stage
         self.stage_start_time = time.time()
         
         stage_names = {
@@ -1680,6 +1742,7 @@ class PrecisionArenaMode(QWidget):
         self.phase_weights_built  = False
         self.session_letter_stats = {}   # {LETTER: {correct: N, total: N}}
         self.adaptive_weights     = {}   # {letter: weight}
+        self._pause_session_timer_until_typing = False
 
         # CSV paths
         self.precision_csv_path     = None
@@ -1761,7 +1824,7 @@ class PrecisionArenaMode(QWidget):
         layout.addWidget(self.target_display)
 
         # Typing input
-        self.input_field = QLineEdit()
+        self.input_field = Week6TypingInput(self)
         self.input_field.textChanged.connect(self._on_input_changed)
         layout.addWidget(self.input_field)
 
@@ -1902,12 +1965,11 @@ class PrecisionArenaMode(QWidget):
         """
         Show next target and announce it.
         All targets are spelled letter by letter, exactly like word practice
-        in the standard weeks. Input is disabled during spelling for targets
-        of length 2 or more, then re-enabled with a beep so the screen reader
-        is never interrupted by a focus shift mid-announcement.
-        Single-char targets are announced instantly (no delay needed).
+        in the standard weeks. Input stays available during speaking, but long
+        targets pause the session timer until typing begins.
         """
         self.current_target = self._generate_target()
+        self._pause_session_timer_until_typing = False
 
         # Always spell every target letter by letter - words, couples, triples, singles
         char_announcements = [self._get_char_announcement(c) for c in self.current_target]
@@ -1918,27 +1980,41 @@ class PrecisionArenaMode(QWidget):
         self.input_field.blockSignals(True)
         self.input_field.clear()
         self.input_field.blockSignals(False)
-
-        if len(self.current_target) == 1:
-            # Single char: announce and enable immediately - no delay needed
-            if self.base_logic.speaker:
-                self.base_logic.speaker.output(announcement)
-            self.input_field.setEnabled(True)
-            self.input_field.setFocus()
-        else:
-            # 2, 3, 4 chars: disable input during spelling, re-enable with beep after delay
-            # Delay calculated from total announcement text length so TTS finishes first
-            self.input_field.setEnabled(False)
-            if self.base_logic.speaker:
-                self.base_logic.speaker.output(announcement)
-            total_ann_len = sum(len(a) for a in char_announcements)
-            delay = total_ann_len * 65 + 400
-            QTimer.singleShot(delay, self._enable_input_with_beep)
-
-    def _enable_input_with_beep(self):
-        winsound.Beep(1000, 100)
         self.input_field.setEnabled(True)
         self.input_field.setFocus()
+
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(announcement)
+
+        if len(self.current_target) > 2:
+            self._pause_session_timer_until_typing = True
+            self.session_timer.stop()
+
+    def _enable_input_with_beep(self):
+        self.input_field.setEnabled(True)
+        self.input_field.setFocus()
+
+    def repeat_current_target(self):
+        if not self.current_target:
+            return
+        char_announcements = [self._get_char_announcement(c) for c in self.current_target]
+        announcement = ", ".join(char_announcements)
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(announcement)
+        if len(self.current_target) > 2:
+            self._pause_session_timer_until_typing = True
+            self.session_timer.stop()
+
+    def try_resume_timer_on_key(self, event):
+        if not self._pause_session_timer_until_typing:
+            return False
+        if event.key() == Qt.Key_Control:
+            return False
+        if not event.text():
+            return False
+        self._pause_session_timer_until_typing = False
+        self.session_timer.start(1000)
+        return False
 
     # ---- Input handling ----
 
