@@ -31,7 +31,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLi
                              QTextBrowser)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap
-from weeks import symbol_pronounciation
+from weeks import symbol_pronounciation, w6words
 from survival_mode import SurvivalMode
 
 
@@ -2280,6 +2280,928 @@ class PrecisionArenaMode(QWidget):
         event.accept()
 
 
+# ============= CRAZY PARTY MODE =============
+
+class CrazyPartyTypingInput(QLineEdit):
+    """Typing field for Crazy Party with Ctrl+Q (quit) and Shift+Enter (status) support."""
+    
+    def __init__(self, mode, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mode = mode
+    
+    def keyPressEvent(self, event):
+        # Ctrl+Q: quit
+        if event.key() == Qt.Key_Q and event.modifiers() & Qt.ControlModifier:
+            self.mode._on_quit_pressed()
+            return
+        
+        # Shift+Enter: show status
+        if event.key() == Qt.Key_Return and event.modifiers() & Qt.ShiftModifier:
+            self.mode._announce_status()
+            return
+        
+        # Ctrl alone: repeat target
+        if event.key() == Qt.Key_Control:
+            self.mode.repeat_current_target()
+            return
+        
+        # Any other key: resume timers and handle input
+        self.mode._on_typing_key_pressed()
+        super().keyPressEvent(event)
+
+
+class CrazyParty(QWidget):
+    """
+    Endless grind mode with high rewards.
+    100 XP ticket entry → risk zone (recover ticket) → safe zone (keep rewards).
+    5 hearts, dynamic XP multiplier, word targets for boss damage.
+    """
+    
+    def __init__(self, base_logic, is_english=True, parent=None):
+        super().__init__()
+        self.setWindowFlag(Qt.Window, True)
+        self.setWindowModality(Qt.ApplicationModal)
+        self.setStyleSheet("background-color: #0f1626; color: #f9d342;")
+        
+        self.base_logic = base_logic
+        self.is_english = is_english
+        self.parent_challenge = parent
+        
+        # Session state
+        self.started = False
+        self.session_xp_earned = 0  # XP earned inside party
+        self.ticket_refunded = False  # Has player reached safe zone?
+        self.current_hearts = 5
+        self.current_danger = 0
+        self.elapsed_seconds = 0
+        self.current_target = ""
+        self.target_count = 0  # Track when to show word
+        
+        # XP multiplier system
+        self.xp_per_correct = 0.01  # 1 XP per 100 correct
+        self.correct_streak = 0
+        self.error_streak = 0
+        
+        # Timers
+        self.session_timer = None
+        self.target_timer = None
+        self.countdown_timer = None
+        self.countdown_value = 3
+        self._tts_timers = []
+        self._tts_waiting = False
+        self._status_announcing = False
+        
+        self._setup_ui()
+        self._setup_timers()
+    
+    # ============= UI SETUP =============
+    
+    def _setup_ui(self):
+        """Build the gameplay screen."""
+        layout = QVBoxLayout()
+        layout.setSpacing(15)
+        
+        # Top stats row
+        stats_layout = QHBoxLayout()
+        
+        self.xp_balance_display = AccessibleLabel(
+            "XP: 0/100",
+            "XP balance: zero out of one hundred."
+        )
+        stats_layout.addWidget(self.xp_balance_display)
+        
+        self.ticket_status_display = AccessibleLabel(
+            "Ticket: RISK",
+            "Ticket status: still in risk zone."
+        )
+        stats_layout.addWidget(self.ticket_status_display)
+        
+        self.hearts_display = AccessibleLabel(
+            "❤❤❤❤❤",
+            "Hearts: five remaining."
+        )
+        stats_layout.addWidget(self.hearts_display)
+        
+        layout.addLayout(stats_layout)
+        
+        # Danger bar
+        self.danger_display = AccessibleLabel(
+            "Danger: 0/10",
+            "Danger level: zero out of ten."
+        )
+        layout.addWidget(self.danger_display)
+        
+        # Time display
+        self.time_display = AccessibleLabel(
+            "00:00",
+            "Elapsed time: zero seconds."
+        )
+        layout.addWidget(self.time_display)
+        
+        # XP per correct multiplier (main visible stat)
+        self.multiplier_display = AccessibleLabel(
+            "XP per correct: 0.010",
+            "Current XP per correct: zero point zero one zero."
+        )
+        self.multiplier_display.setStyleSheet(
+            self.multiplier_display.styleSheet().replace("font-size: 22px;", "font-size: 28px;")
+        )
+        layout.addWidget(self.multiplier_display)
+        
+        # Target display
+        self.target_display = AccessibleLabel(
+            "",
+            "Current typing target."
+        )
+        self.target_display.setMinimumHeight(100)
+        self.target_display.setStyleSheet(
+            self.target_display.styleSheet().replace("font-size: 22px;", "font-size: 42px;")
+        )
+        layout.addWidget(self.target_display)
+        
+        # Countdown (hidden until session starts)
+        self.countdown_display = AccessibleLabel(
+            "",
+            "Countdown before gameplay begins."
+        )
+        self.countdown_display.setStyleSheet(
+            self.countdown_display.styleSheet().replace("font-size: 22px;", "font-size: 54px;")
+        )
+        self.countdown_display.setVisible(False)
+        layout.addWidget(self.countdown_display)
+        
+        # Typing input - CRITICAL: must get focus
+        self.input_field = CrazyPartyTypingInput(self)
+        self.input_field.setAccessibleName("Typing field for Crazy Party targets")
+        self.input_field.setStyleSheet(
+            "padding: 14px; background-color: #131b36; color: #f9d342; "
+            "border: 2px solid #f9d342; border-radius: 10px; font-size: 28px;"
+        )
+        self.input_field.textChanged.connect(self._on_input_changed)
+        layout.addWidget(self.input_field)
+        
+        # Help text
+        help_text = (
+            "Type targets. Ctrl: repeat. Ctrl+Q: quit. Shift+Enter: status."
+            if self.is_english else
+            "Tapez les cibles. Ctrl: répéter. Ctrl+Q: quitter. Maj+Entrée: statut."
+        )
+        self.help_label = AccessibleLabel(help_text, help_text)
+        self.help_label.setStyleSheet(
+            self.help_label.styleSheet().replace("font-size: 22px;", "font-size: 16px;")
+        )
+        layout.addWidget(self.help_label)
+        
+        layout.addStretch()
+        self.setLayout(layout)
+    
+    def _setup_timers(self):
+        """Initialize all QTimer objects."""
+        self.session_timer = QTimer(self)
+        self.session_timer.setInterval(1000)
+        self.session_timer.timeout.connect(self._on_session_tick)
+        
+        self.target_timer = QTimer(self)
+        self.target_timer.setSingleShot(True)
+        self.target_timer.timeout.connect(self._on_target_timeout)
+        
+        self.countdown_timer = QTimer(self)
+        self.countdown_timer.setInterval(1000)
+        self.countdown_timer.timeout.connect(self._on_countdown_tick)
+    
+    # ============= SESSION LIFECYCLE =============
+    
+    def start_session(self):
+        """Begin the Crazy Party experience."""
+        self._reset_session_state()
+        
+        # Deduct 100 XP entry ticket
+        if self.base_logic.xp_balance >= 100:
+            self.base_logic.xp_balance -= 100
+        else:
+            # Not enough XP to enter
+            if self.base_logic.speaker:
+                msg = ("Not enough XP to enter. You need 100 XP." 
+                       if self.is_english else
+                       "Pas assez d'XP pour entrer. Vous avez besoin de 100 XP.")
+                self.base_logic.speaker.speak(msg)
+            self.close()
+            return
+        
+        # Show welcome dialog
+        if not self._show_welcome_dialog():
+            # User declined - refund the ticket
+            self.base_logic.xp_balance += 100
+            return
+        
+        # Show as modal maximized window
+        self.setWindowState(Qt.WindowMaximized)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        
+        # Start countdown
+        self.countdown_display.setVisible(True)
+        self.countdown_display.update_text(
+            str(self.countdown_value),
+            f"Countdown: {self.countdown_value} seconds remaining."
+        )
+        self.countdown_timer.start()
+    
+    def _show_welcome_dialog(self):
+        """Show welcome screen with ticket explanation."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Crazy Party" if self.is_english else "Fête Folle")
+        dialog.setWindowModality(Qt.ApplicationModal)
+        layout = QVBoxLayout()
+        
+        description = (
+            "CRAZY PARTY: Endless high-reward grind mode.\n\n"
+            "TICKET COST: You pay 100 XP to enter.\n\n"
+            "RISK ZONE: At first, you are in the risk zone. Your goal is to earn back 100 XP inside the party. "
+            "If you leave or lose all hearts while in the risk zone, the ticket is lost.\n\n"
+            "SAFE ZONE: Once you earn 100 XP, you enter the safe zone and recover your ticket. "
+            "In the safe zone, any further rewards are pure gain. "
+            "You can leave anytime and keep all rewards earned so far.\n\n"
+            "MODE OVERVIEW: 5 hearts. Danger meter 0-10. "
+            "Incorrect answer = +1 danger. Timeout = +2 danger. "
+            "Danger reaches 10 = lose 1 heart and reset danger.\n\n"
+            "DYNAMIC REWARDS: Each correct answer earns XP based on the current XP per correct multiplier. "
+            "Get 5 correct in a row to double your multiplier. "
+            "One error or timeout halves your multiplier.\n\n"
+            "WORD TARGETS: Rare special targets (usually after 80-120 letters). "
+            "Type a word correctly = 1% boss health damage. Incorrect word = nothing special.\n\n"
+            "This is the highest-reward mode. Ready to grind?"
+            if self.is_english else
+            "FÊTE FOLLE : Mode de meulage sans fin avec hautes récompenses.\n\n"
+            "COÛT DU BILLET : Vous payez 100 XP pour entrer.\n\n"
+            "ZONE RISQUÉE : Au départ, vous êtes en zone risquée. "
+            "Votre objectif est de gagner 100 XP dans la fête. "
+            "Si vous partez ou perdez tous les cœurs en zone risquée, le billet est perdu.\n\n"
+            "ZONE SÛRE : Une fois que vous gagnez 100 XP, vous entrez en zone sûre et récupérez votre billet. "
+            "En zone sûre, toute récompense supplémentaire est du gain pur. "
+            "Vous pouvez partir à tout moment et garder toutes les récompenses gagnées jusqu'à présent.\n\n"
+            "VUE D'ENSEMBLE : 5 cœurs. Jauge de danger 0-10. "
+            "Réponse incorrecte = +1 danger. Délai = +2 danger. "
+            "Le danger atteint 10 = perdre 1 cœur et réinitialiser le danger.\n\n"
+            "RÉCOMPENSES DYNAMIQUES : Chaque réponse correcte gagne des XP selon le multiplicateur XP actuel. "
+            "Obtenez 5 correctes de suite pour doubler votre multiplicateur. "
+            "Une erreur ou un délai divise par deux votre multiplicateur.\n\n"
+            "CIBLES MOT : Cibles spéciales rares (généralement après 80-120 lettres). "
+            "Tapez un mot correctement = 1% de dégâts à la santé du boss. "
+            "Mot incorrect = rien de spécial.\n\n"
+            "C'est le mode le plus riche en récompenses. Prêt à moudre ?"
+        )
+        
+        browser = AccessibleBrowser(description, description)
+        layout.addWidget(browser)
+        
+        btn_layout = QHBoxLayout()
+        btn_yes = QPushButton("I'm ready for it!" if self.is_english else "Je suis prêt(e) !")
+        btn_yes.clicked.connect(dialog.accept)
+        btn_layout.addWidget(btn_yes)
+        
+        btn_no = QPushButton("Not yet" if self.is_english else "Pas encore")
+        btn_no.clicked.connect(dialog.reject)
+        btn_layout.addWidget(btn_no)
+        
+        layout.addLayout(btn_layout)
+        dialog.setLayout(layout)
+        
+        return dialog.exec_() == QDialog.Accepted
+    
+    def _reset_session_state(self):
+        """Reset all game state to initial values."""
+        self.current_hearts = 5
+        self.current_danger = 0
+        self.elapsed_seconds = 0
+        self.current_target = ""
+        self.session_xp_earned = 0
+        self.ticket_refunded = False
+        self.target_count = 0
+        self.xp_per_correct = 0.01
+        self.correct_streak = 0
+        self.error_streak = 0
+        self.countdown_value = 3
+        self._tts_waiting = False
+        self._status_announcing = False
+        self._clear_pending_tts()
+        self.session_timer.stop()
+        self.target_timer.stop()
+        self.countdown_timer.stop()
+        self.input_field.clear()
+        self._update_display()
+    
+    # ============= COUNTDOWN =============
+    
+    def _on_countdown_tick(self):
+        """Handle countdown timer tick."""
+        self.countdown_value -= 1
+        if self.countdown_value > 0:
+            self.countdown_display.update_text(
+                str(self.countdown_value),
+                f"Countdown: {self.countdown_value} seconds remaining."
+            )
+            return
+        
+        # Countdown finished - start gameplay
+        self.countdown_timer.stop()
+        self.countdown_display.setVisible(False)
+        self.started = True
+        self.session_timer.start()
+        self._next_target()
+        # CRITICAL: Focus input field NOW
+        self.input_field.setFocus()
+    
+    # ============= SESSION TICKING =============
+    
+    def _on_session_tick(self):
+        """Called every 1 second during gameplay."""
+        self.elapsed_seconds += 1
+        self._update_display()
+    
+    def _update_display(self):
+        """Refresh all UI status displays."""
+        # XP balance
+        xp_str = f"{self.session_xp_earned}/100"
+        self.xp_balance_display.update_text(
+            f"XP: {xp_str}",
+            f"XP balance: {self.session_xp_earned} out of one hundred."
+        )
+        
+        # Ticket status
+        ticket_text = "SAFE" if self.ticket_refunded else "RISK"
+        ticket_accessible = "Safe zone reached." if self.ticket_refunded else "Still in risk zone."
+        self.ticket_status_display.update_text(
+            f"Ticket: {ticket_text}",
+            f"Ticket status: {ticket_accessible}"
+        )
+        
+        # Hearts
+        hearts_text = "❤" * self.current_hearts + "♡" * (5 - self.current_hearts)
+        self.hearts_display.update_text(
+            hearts_text,
+            f"Hearts remaining: {self.current_hearts}."
+        )
+        
+        # Danger
+        danger_text = f"Danger: {self.current_danger}/10"
+        self.danger_display.update_text(
+            danger_text,
+            f"Danger level: {self.current_danger} out of ten."
+        )
+        
+        # Time
+        minutes = self.elapsed_seconds // 60
+        seconds = self.elapsed_seconds % 60
+        self.time_display.update_text(
+            f"{minutes:02d}:{seconds:02d}",
+            f"Elapsed time: {minutes} minutes and {seconds} seconds."
+        )
+        
+        # XP per correct multiplier
+        multiplier_str = f"{self.xp_per_correct:.3f}"
+        self.multiplier_display.update_text(
+            f"XP per correct: {multiplier_str}",
+            f"Current XP per correct: {multiplier_str}."
+        )
+    
+    # ============= TARGET GENERATION =============
+    
+    def _should_generate_word(self):
+        """Decide if next target should be a word (every 80-120 targets)."""
+        # Gradually increase word frequency slightly as session goes on
+        base_interval = random.randint(80, 120)
+        return (self.target_count % base_interval) == (base_interval - 1)
+    
+    def _generate_target(self):
+        """Generate next target based on session state."""
+        self.target_count += 1
+        
+        # Decide if this is a word target
+        if self._should_generate_word() and w6words:
+            return random.choice(w6words)
+        
+        # Letter target - mostly lowercase, gradually add uppercase/symbols
+        rand = random.random()
+        
+        # Lowercase letter (most common)
+        if rand < 0.75:
+            return random.choice("abcdefghijklmnopqrstuvwxyz")
+        
+        # Uppercase (gradually more common as session progresses)
+        if rand < 0.85 + (self.elapsed_seconds / 3600.0) * 0.1:
+            return random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        
+        # Symbol or accent from symbol_pronounciation
+        if symbol_pronounciation:
+            return random.choice(list(symbol_pronounciation.keys()))
+        
+        # Fallback to lowercase
+        return random.choice("abcdefghijklmnopqrstuvwxyz")
+    
+    def _get_target_timeout_ms(self, target):
+        """Calculate timeout based on target complexity."""
+        if not target:
+            return 2000
+        
+        total_ms = 0
+        for char in target:
+            if char.islower() or char.isdigit():
+                total_ms += 2000
+            else:  # uppercase, symbol, accent
+                total_ms += 3000
+        return total_ms
+    
+    def _get_target_pronunciation(self, text):
+        """Get pronunciation for a target."""
+        if text in symbol_pronounciation:
+            return symbol_pronounciation[text]
+        if text.isalpha() and text.isupper() and len(text) == 1:
+            return f"{text.lower()} majuscule"
+        return text
+    
+    # ============= TARGET LIFECYCLE =============
+    
+    def _next_target(self):
+        """Generate and announce the next target."""
+        self.current_target = self._generate_target()
+        self.input_field.clear()
+        self.target_display.update_text(
+            self.current_target,
+            f"Type the target: {self.current_target}."
+        )
+        self._announce_target()
+        if not self._tts_waiting:
+            self._start_target_timer_for_target()
+    
+    def _start_target_timer_for_target(self):
+        """Start timeout timer for current target."""
+        timeout_ms = self._get_target_timeout_ms(self.current_target)
+        self.target_timer.start(timeout_ms)
+    
+    def _on_target_timeout(self):
+        """Handle target timeout."""
+        winsound.Beep(600, 300)
+        self._apply_danger(2, "timeout")
+    
+    def _on_input_changed(self, text):
+        """Handle typing input changes."""
+        if not self.current_target:
+            return
+        
+        # Check if typed text matches target
+        if self.current_target.startswith(text):
+            if text == self.current_target:
+                self._complete_target()
+            return
+        
+        # Wrong input
+        winsound.Beep(400, 200)
+        self._apply_danger(1, "incorrect")
+        self.input_field.clear()
+    
+    def _complete_target(self):
+        """Target correctly typed - award XP and move to next."""
+        self._clear_pending_tts()
+        self.target_timer.stop()
+        
+        winsound.Beep(1500, 100)
+        
+        # Handle word targets specially
+        is_word = len(self.current_target) > 1 and self.current_target[0].isalpha()
+        
+        if is_word:
+            # Word: deal 1% boss damage
+            if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
+                self.parent_challenge.logic.boss_health = max(
+                    0,
+                    self.parent_challenge.logic.boss_health - 1
+                )
+        else:
+            # Letter: award XP based on multiplier
+            xp_earned = max(1, int(self.xp_per_correct * 100))
+            self.session_xp_earned += xp_earned
+            self.correct_streak += 1
+            self.error_streak = 0
+            
+            # Check for safe zone transition
+            if not self.ticket_refunded and self.session_xp_earned >= 100:
+                self.ticket_refunded = True
+                if self.base_logic.speaker:
+                    msg = ("Safe zone reached! Your ticket is refunded. Keep exploring for more rewards!"
+                           if self.is_english else
+                           "Zone sûre atteinte ! Votre billet est remboursé. Continuez à explorer pour plus de récompenses !")
+                    self._pause_and_speak(msg)
+            
+            # Check for streak bonus (5 correct in a row)
+            if self.correct_streak >= 5:
+                self.xp_per_correct *= 2
+                self.correct_streak = 0
+                if self.base_logic.speaker:
+                    msg = ("Streak! Multiplier doubled!"
+                           if self.is_english else
+                           "Série ! Multiplicateur doublé !")
+                    self._pause_and_speak(msg)
+        
+        self._update_display()
+        if not self._tts_waiting and self.started:
+            if not self.session_timer.isActive():
+                self.session_timer.start()
+            self._next_target()
+    
+    # ============= DANGER & HEARTS =============
+    
+    def _apply_danger(self, amount, reason):
+        """Apply danger and check for heart loss."""
+        self._clear_pending_tts()
+        self.target_timer.stop()
+        
+        # Update streak on error
+        if reason == "incorrect":
+            self.error_streak += 1
+            if self.error_streak == 1 or self.error_streak > 1:
+                self.xp_per_correct /= 2
+        elif reason == "timeout":
+            self.error_streak += 1
+            if self.error_streak == 1 or self.error_streak > 1:
+                self.xp_per_correct /= 2
+        
+        self.current_danger = min(10, self.current_danger + amount)
+        self._update_display()
+        
+        if self.current_danger >= 10:
+            # Heart loss
+            winsound.Beep(150, 4000)  # Long deep beep ~4 seconds
+            self.current_danger = 0
+            self.current_hearts -= 1
+            self.correct_streak = 0
+            self.error_streak = 0
+            self._update_display()
+            
+            if self.base_logic.speaker:
+                msg = (f"Heart lost. {self.current_hearts} remaining."
+                       if self.is_english else
+                       f"Cœur perdu. {self.current_hearts} restant.")
+                self._pause_and_speak(msg)
+            
+            if self.current_hearts <= 0:
+                # End session
+                self._complete_session(
+                    success=self.ticket_refunded,
+                    exited=False
+                )
+                return
+            else:
+                # Pause 5 seconds before resuming
+                QTimer.singleShot(5000, self._resume_after_heart_loss)
+                return
+        
+        # Resume gameplay
+        if not self._tts_waiting and self.started:
+            if not self.session_timer.isActive():
+                self.session_timer.start()
+            self._start_target_timer_for_target()
+    
+    def _resume_after_heart_loss(self):
+        """Resume gameplay after 5-second heart loss pause."""
+        self.input_field.setFocus()
+        if self.started:
+            if not self.session_timer.isActive():
+                self.session_timer.start()
+            self._next_target()
+    
+    # ============= TTS & ANNOUNCEMENTS =============
+    
+    def _announce_target(self):
+        """Announce target via TTS."""
+        if not self.base_logic or not getattr(self.base_logic, 'speaker', None):
+            return
+        if not self.current_target:
+            return
+        
+        is_word = len(self.current_target) > 1 and self.current_target[0].isalpha()
+        
+        if is_word:
+            # Word: spell it out letter by letter, pause timer until user types
+            self._pause_for_tts()
+            self.base_logic.speaker.speak(self.current_target)
+            
+            delay_ms = 900
+            for idx, char in enumerate(self.current_target):
+                timer = QTimer(self)
+                timer.setSingleShot(True)
+                timer.timeout.connect(lambda c=char: self._speak_character(c))
+                timer.start(delay_ms + idx * 700)
+                self._tts_timers.append(timer)
+            
+            # After all letters are spoken, allow typing to resume the timer
+            resume_timer = QTimer(self)
+            resume_timer.setSingleShot(True)
+            resume_timer.timeout.connect(self._finalize_word_announcement)
+            resume_timer.start(delay_ms + len(self.current_target) * 700 + 700)
+            self._tts_timers.append(resume_timer)
+        else:
+            # Letter: speak pronunciation, timer starts after announcement ends
+            announcement = self._get_target_pronunciation(self.current_target)
+            self._pause_for_tts()
+            self.base_logic.speaker.speak(announcement)
+            
+            # Resume after brief delay
+            resume_timer = QTimer(self)
+            resume_timer.setSingleShot(True)
+            resume_timer.timeout.connect(self._resume_after_tts_letter)
+            resume_timer.start(800)
+            self._tts_timers.append(resume_timer)
+        
+        try:
+            self.input_field.setFocus()
+        except Exception:
+            pass
+    
+    def _speak_character(self, char):
+        """Speak a single character."""
+        if not self.base_logic or not getattr(self.base_logic, 'speaker', None):
+            return
+        self.base_logic.speaker.speak(self._get_target_pronunciation(char))
+    
+    def _finalize_word_announcement(self):
+        """Word announcement done - timer starts when user types first character."""
+        if not self._tts_waiting:
+            return
+        self._tts_waiting = False
+        # Do NOT start timers yet - wait for first key press
+        try:
+            self.input_field.setFocus()
+        except Exception:
+            pass
+    
+    def _resume_after_tts_letter(self):
+        """Letter announcement done - start timers immediately."""
+        if not self._tts_waiting:
+            return
+        self._tts_waiting = False
+        if self.started and not self.session_timer.isActive():
+            self.session_timer.start()
+            self._start_target_timer_for_target()
+        try:
+            self.input_field.setFocus()
+        except Exception:
+            pass
+    
+    def _pause_for_tts(self):
+        """Pause all timers for TTS."""
+        self._tts_waiting = True
+        if self.session_timer.isActive():
+            self.session_timer.stop()
+        if self.target_timer.isActive():
+            self.target_timer.stop()
+    
+    def _resume_tts_timers(self):
+        """Resume timers after TTS completes."""
+        if not self._tts_waiting:
+            return
+        self._tts_waiting = False
+        if self.started and not self.session_timer.isActive():
+            self.session_timer.start()
+        if self.current_target and not self.target_timer.isActive():
+            self._start_target_timer_for_target()
+    
+    def _clear_pending_tts(self):
+        """Stop and clear all pending TTS timers."""
+        self._tts_waiting = False
+        for timer in self._tts_timers:
+            timer.stop()
+        self._tts_timers.clear()
+    
+    def _pause_and_speak(self, msg):
+        """Pause game, speak message, resume."""
+        self._pause_for_tts()
+        if self.base_logic and getattr(self.base_logic, 'speaker', None):
+            self.base_logic.speaker.speak(msg)
+        QTimer.singleShot(1500, self._resume_tts_timers)
+    
+    # ============= INPUT HANDLERS =============
+    
+    def _on_typing_key_pressed(self):
+        """Called when user presses any key (except Ctrl, Shift+Enter, Ctrl+Q)."""
+        # If word was announced and timer paused, start it now on first key
+        if self._tts_waiting and len(self.current_target) > 1:
+            self._clear_pending_tts()
+            self._tts_waiting = False
+            if self.started and not self.session_timer.isActive():
+                self.session_timer.start()
+                self._start_target_timer_for_target()
+            try:
+                self.input_field.setFocus()
+            except Exception:
+                pass
+    
+    def _announce_status(self):
+        """Shift+Enter: announce hearts and danger."""
+        if self._status_announcing:
+            return
+        self._status_announcing = True
+        
+        # Pause timers
+        was_running = self.session_timer.isActive()
+        if was_running:
+            self.session_timer.stop()
+        if self.target_timer.isActive():
+            self.target_timer.stop()
+        
+        # Announce status
+        if self.base_logic and getattr(self.base_logic, 'speaker', None):
+            msg = (f"Hearts: {self.current_hearts}. Danger: {self.current_danger}."
+                   if self.is_english else
+                   f"Cœurs: {self.current_hearts}. Danger: {self.current_danger}.")
+            self.base_logic.speaker.speak(msg)
+        
+        # Resume after announcement
+        QTimer.singleShot(1000, lambda: self._resume_after_status(was_running))
+    
+    def _resume_after_status(self, was_running):
+        """Resume timers after status announcement."""
+        self._status_announcing = False
+        if was_running and self.started and not self.session_timer.isActive():
+            self.session_timer.start()
+        if self.current_target and not self.target_timer.isActive():
+            self._start_target_timer_for_target()
+        try:
+            self.input_field.setFocus()
+        except Exception:
+            pass
+    
+    def repeat_current_target(self):
+        """Ctrl key: repeat current target."""
+        self._announce_target()
+    
+    def _on_quit_pressed(self):
+        """Ctrl+Q: show exit confirmation dialog."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Confirm Exit" if self.is_english else "Confirmer la sortie")
+        dialog.setWindowModality(Qt.ApplicationModal)
+        layout = QVBoxLayout()
+        
+        if self.ticket_refunded:
+            # Safe zone exit
+            message = (
+                "You have reached the safe zone and recovered your 100 XP ticket.\n\n"
+                "If you exit now, you will keep:\n"
+                "• Your 100 XP ticket refund\n"
+                "• Your 100 XP earned in the risk zone\n"
+                "• All XP and boss damage earned in the safe zone\n\n"
+                "Exit and keep these rewards?"
+                if self.is_english else
+                "Vous avez atteint la zone sûre et récupéré votre billet de 100 XP.\n\n"
+                "Si vous partez maintenant, vous conserverez:\n"
+                "• Votre remboursement de 100 XP\n"
+                "• Vos 100 XP gagnés en zone risquée\n"
+                "• Tous les XP et dégâts au boss gagnés en zone sûre\n\n"
+                "Quitter et garder ces récompenses ?"
+            )
+        else:
+            # Risk zone exit
+            message = (
+                "You are still in the risk zone and have NOT recovered your ticket.\n\n"
+                "If you exit now:\n"
+                "• Your 100 XP ticket is LOST\n"
+                "• Your session XP reward will be HALVED\n"
+                "• You will keep only boss damage already earned\n\n"
+                "Exit anyway?"
+                if self.is_english else
+                "Vous êtes toujours en zone risquée et n'avez PAS récupéré votre billet.\n\n"
+                "Si vous partez maintenant:\n"
+                "• Votre billet de 100 XP est PERDU\n"
+                "• Votre récompense XP de session sera DIVISÉE PAR DEUX\n"
+                "• Vous conserverez uniquement les dégâts au boss déjà gagnés\n\n"
+                "Quitter quand même ?"
+            )
+        
+        browser = AccessibleBrowser(message, message)
+        layout.addWidget(browser)
+        
+        btn_layout = QHBoxLayout()
+        btn_yes = QPushButton("Yes, exit" if self.is_english else "Oui, quitter")
+        btn_yes.clicked.connect(dialog.accept)
+        btn_layout.addWidget(btn_yes)
+        
+        btn_no = QPushButton("No, continue" if self.is_english else "Non, continuer")
+        btn_no.clicked.connect(dialog.reject)
+        btn_layout.addWidget(btn_no)
+        
+        layout.addLayout(btn_layout)
+        dialog.setLayout(layout)
+        
+        if dialog.exec_() == QDialog.Accepted:
+            self._complete_session(success=self.ticket_refunded, exited=True)
+    
+    # ============= SESSION COMPLETION =============
+    
+    def _complete_session(self, success, exited=False):
+        """End the session and apply rewards."""
+        self._clear_pending_tts()
+        self.session_timer.stop()
+        self.target_timer.stop()
+        self.countdown_timer.stop()
+        
+        # Calculate rewards
+        if exited and not self.ticket_refunded:
+            # Exited in risk zone: halve XP reward, lose ticket
+            session_xp_reward = self.session_xp_earned // 2
+        else:
+            session_xp_reward = self.session_xp_earned
+        
+        # Apply rewards
+        self.base_logic.xp_balance += session_xp_reward
+        
+        if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
+            self.parent_challenge.logic.save_progress()
+            self.parent_challenge.update_display()
+        
+        # Show appropriate screen
+        if success and self.ticket_refunded:
+            self._show_success_screen(session_xp_reward)
+        else:
+            self._show_failure_screen(session_xp_reward)
+        
+        self.close()
+    
+    def _show_success_screen(self, xp_reward):
+        """Show success screen."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Success!" if self.is_english else "Succès !")
+        dialog.setWindowModality(Qt.ApplicationModal)
+        layout = QVBoxLayout()
+        
+        message = (
+            f"Party success! You reached the safe zone and beyond.\n\n"
+            f"Rewards:\n"
+            f"• {xp_reward} XP earned\n"
+            f"• Boss damage applied\n\n"
+            f"Well done! Come back for more grind."
+            if self.is_english else
+            f"Succès de la fête ! Vous avez atteint la zone sûre et au-delà.\n\n"
+            f"Récompenses:\n"
+            f"• {xp_reward} XP gagnés\n"
+            f"• Dégâts du boss appliqués\n\n"
+            f"Bien joué ! Revenez pour plus de meulage."
+        )
+        
+        browser = AccessibleBrowser(message, message)
+        layout.addWidget(browser)
+        
+        btn = QPushButton("Return to battle" if self.is_english else "Retour à la bataille")
+        btn.clicked.connect(dialog.accept)
+        layout.addWidget(btn)
+        
+        dialog.setLayout(layout)
+        dialog.exec_()
+    
+    def _show_failure_screen(self, xp_reward):
+        """Show failure screen."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Party Over" if self.is_english else "Fête Terminée")
+        dialog.setWindowModality(Qt.ApplicationModal)
+        layout = QVBoxLayout()
+        
+        reason = (
+            "You lost all your hearts in the risk zone. Your ticket was not refunded."
+            if not self.ticket_refunded else
+            "You exited the safe zone."
+        ) if not self.ticket_refunded else "Session ended."
+        
+        message = (
+            f"Party ended.\n\n"
+            f"{reason}\n\n"
+            f"XP earned this session: {xp_reward}\n\n"
+            f"Try again for a better run!"
+            if self.is_english else
+            f"Fête terminée.\n\n"
+            f"{reason}\n\n"
+            f"XP gagnés dans cette session : {xp_reward}\n\n"
+            f"Réessayez pour une meilleure tentative !"
+        )
+        
+        browser = AccessibleBrowser(message, message)
+        layout.addWidget(browser)
+        
+        btn = QPushButton("Return to battle" if self.is_english else "Retour à la bataille")
+        btn.clicked.connect(dialog.accept)
+        layout.addWidget(btn)
+        
+        dialog.setLayout(layout)
+        dialog.exec_()
+    
+    def closeEvent(self, event):
+        """Ensure cleanup on close."""
+        self._clear_pending_tts()
+        self.session_timer.stop()
+        self.target_timer.stop()
+        self.countdown_timer.stop()
+        event.accept()
+
+
 # ============= WEEK 6 LOGIC =============
 
 class Week6Logic:
@@ -2757,6 +3679,15 @@ class Week6UI(QWidget):
             self._start_survival_mode()
             return
 
+        # Crazy Party  -  launch endless grind mode
+        if mode_key == "crazy_party":
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(
+                    self.strings["mode_started"].format(name=mode["name"])
+                )
+            self._start_crazy_party()
+            return
+
         # Other modes (placeholder until implemented)
         if not mode["completed"]:
             self.logic.mark_mode_complete(mode_key)
@@ -2874,6 +3805,21 @@ class Week6UI(QWidget):
         self.survival_mode.setWindowState(Qt.WindowMaximized)
         self.survival_mode.show()
         self.survival_mode.start_session()
+
+    def _start_crazy_party(self):
+        """Launch Crazy Party as a separate maximised window."""
+        self.crazy_party = CrazyParty(
+            base_logic=self.base_logic,
+            is_english=self.is_english,
+            parent=self,
+        )
+        self.crazy_party.setStyleSheet(self.styleSheet())
+        self.crazy_party.setWindowTitle(
+            "Crazy Keyboard Party" if self.is_english else "Fête Folle Clavier"
+        )
+        self.crazy_party.setWindowState(Qt.WindowMaximized)
+        self.crazy_party.show()
+        self.crazy_party.start_session()
 
     def update_display(self):
         """Refresh all stat widgets from current logic state."""
