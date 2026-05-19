@@ -5,10 +5,11 @@
 
 import random
 import winsound
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                              QLineEdit, QLabel, QDialog, QTextBrowser, QApplication)
 from PyQt5.QtCore import Qt, QTimer
 from weeks import symbol_pronounciation, w6words
+from static.accessible_widgets import AccessiblePushButton
 
 
 # ============= ACCESSIBLE WIDGETS =============
@@ -207,7 +208,7 @@ class SurvivalMode(QWidget):
 
         # Quit button
         quit_text = "Quit" if self.is_english else "Quitter"
-        self.quit_btn = QPushButton(quit_text)
+        self.quit_btn = AccessiblePushButton(quit_text)
         self.quit_btn.clicked.connect(self._on_quit)
         root.addWidget(self.quit_btn)
 
@@ -344,13 +345,13 @@ class SurvivalMode(QWidget):
         layout.addWidget(browser)
 
         btn_row = QHBoxLayout()
-        btn_ready = QPushButton(
+        btn_ready = AccessiblePushButton(
             "I'm ready for it!" if self.is_english else "Je suis pret(e) !"
         )
         btn_ready.clicked.connect(dlg.accept)
         btn_row.addWidget(btn_ready)
 
-        btn_not_yet = QPushButton("Not yet" if self.is_english else "Pas encore")
+        btn_not_yet = AccessiblePushButton("Not yet" if self.is_english else "Pas encore")
         btn_not_yet.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_not_yet)
 
@@ -722,10 +723,10 @@ class SurvivalMode(QWidget):
         layout.addWidget(browser)
 
         btn_row = QHBoxLayout()
-        btn_agree = QPushButton(btn_agree_text)
+        btn_agree = AccessiblePushButton(btn_agree_text)
         btn_agree.clicked.connect(dlg.accept)
         btn_row.addWidget(btn_agree)
-        btn_no = QPushButton(btn_no_text)
+        btn_no = AccessiblePushButton(btn_no_text)
         btn_no.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_no)
         layout.addLayout(btn_row)
@@ -858,7 +859,7 @@ class SurvivalMode(QWidget):
         browser.setMinimumHeight(180)
         layout.addWidget(browser)
 
-        btn = QPushButton(
+        btn = AccessiblePushButton(
             "Return to Challenge Battle" if self.is_english else "Retour au Combat de Defi"
         )
         btn.clicked.connect(dlg.accept)
@@ -904,11 +905,11 @@ class SurvivalMode(QWidget):
 
         btn_row = QHBoxLayout()
 
-        btn_retry = QPushButton("Retry" if self.is_english else "Recommencer")
+        btn_retry = AccessiblePushButton("Retry" if self.is_english else "Recommencer")
         btn_retry.clicked.connect(lambda: self._retry_from_failure(dlg))
         btn_row.addWidget(btn_retry)
 
-        btn_back = QPushButton(
+        btn_back = AccessiblePushButton(
             "Return to Challenge Battle" if self.is_english else "Retour au Combat de Defi"
         )
         btn_back.clicked.connect(dlg.accept)

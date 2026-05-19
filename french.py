@@ -18,13 +18,14 @@ import sys
 import winsound
 import time
 import os
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
                              QLabel, QStackedWidget, QDialog, QApplication)
 from PyQt5.QtCore import Qt, QTimer, QUrl
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from weeks import Week4Logic
 from w6challenge import AccessibleBrowser, AccessibleLabel
+from static.accessible_widgets import AccessiblePushButton
 
 # Developer picture path
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -60,8 +61,8 @@ class AppFrontend(QWidget):
         # Apply dark theme stylesheet
         self.setStyleSheet("""
             QWidget { background-color: #0a0a12; color: #ffffff; font-family: Arial; font-size: 24px; }
-            QPushButton { background-color: #16213e; border-radius: 12px; padding: 15px; color: white; border: 2px solid #e94560; margin: 5px; }
-            QPushButton:hover { background-color: #e94560; }
+            AccessiblePushButton { background-color: #16213e; border-radius: 12px; padding: 15px; color: white; border: 2px solid #e94560; margin: 5px; }
+            AccessiblePushButton:hover { background-color: #e94560; }
             QLineEdit { padding: 18px; background-color: #1a1a2e; color: #0fecb0; border: 2px solid #0fecb0; border-radius: 10px; text-align: center; }
             QLineEdit[readOnly="true"] { color: #f9d342; border-color: #f9d342; }
         """)
@@ -120,10 +121,10 @@ class AppFrontend(QWidget):
             accessible_text="Choisissez votre semaine. Utilisez Tab et Entrée pour sélectionner.",
         ))
         for i, week in enumerate(self.logic.weeks):
-            btn = QPushButton(week["name"])
+            btn = AccessiblePushButton(week["name"])
             btn.clicked.connect(lambda checked, idx=i: self.select_week(idx))
             layout.addWidget(btn)
-        btn_quit = QPushButton("Quitter l'application")
+        btn_quit = AccessiblePushButton("Quitter l'application")
         btn_quit.clicked.connect(self.confirm_quit)
         layout.addWidget(btn_quit)
         page.setLayout(layout)
@@ -145,8 +146,8 @@ class AppFrontend(QWidget):
         layout.addWidget(msg)
 
         btn_row = QHBoxLayout()
-        btn_cancel = QPushButton("Annuler")
-        btn_ok = QPushButton("OK - Quitter")
+        btn_cancel = AccessiblePushButton("Annuler")
+        btn_ok = AccessiblePushButton("OK - Quitter")
         btn_cancel.clicked.connect(dialog.reject)
         btn_ok.clicked.connect(dialog.accept)
         btn_row.addWidget(btn_cancel)
@@ -181,9 +182,9 @@ class AppFrontend(QWidget):
         layout = QVBoxLayout()
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Entrez votre nom...")
-        btn_learn = QPushButton("Apprendre")
-        btn_practice = QPushButton("Pratique")
-        btn_retour = QPushButton("Retour")
+        btn_learn = AccessiblePushButton("Apprendre")
+        btn_practice = AccessiblePushButton("Pratique")
+        btn_retour = AccessiblePushButton("Retour")
         btn_learn.clicked.connect(self.start_learning)
         btn_practice.clicked.connect(self.start_practice)
         btn_retour.clicked.connect(self.go_back_to_week_selection)
@@ -224,11 +225,11 @@ class AppFrontend(QWidget):
         self.learn_label.setAlignment(Qt.AlignCenter)
         self.learn_label.setStyleSheet("font-size: 130px; color: #e94560; font-weight: bold;")
         
-        self.btn_ok = QPushButton("OK")
+        self.btn_ok = AccessiblePushButton("OK")
         self.btn_ok.hide()
         self.btn_ok.clicked.connect(self.on_ok_clicked)
         
-        self.btn_stop = QPushButton("Quitter")
+        self.btn_stop = AccessiblePushButton("Quitter")
         self.btn_stop.clicked.connect(self.on_ok_clicked)
         
         layout.addWidget(self.result_output)
@@ -244,9 +245,9 @@ class AppFrontend(QWidget):
         """Page 3: Practice mode selection"""
         page = QWidget()
         layout = QVBoxLayout()
-        btn_letters = QPushButton("Pratique des Lettres")
-        btn_words = QPushButton("Pratique des Mots")
-        btn_back = QPushButton("Retour")
+        btn_letters = AccessiblePushButton("Pratique des Lettres")
+        btn_words = AccessiblePushButton("Pratique des Mots")
+        btn_back = AccessiblePushButton("Retour")
         btn_letters.clicked.connect(lambda: self.start_game("LETTERS"))
         btn_words.clicked.connect(lambda: self.start_game("WORDS"))
         btn_back.clicked.connect(lambda: self.pages.setCurrentIndex(1))
@@ -273,7 +274,7 @@ class AppFrontend(QWidget):
             visual_text="Score : 0",
             accessible_text="Score actuel : 0",
         )
-        btn_quit = QPushButton("Quitter")
+        btn_quit = AccessiblePushButton("Quitter")
         btn_quit.clicked.connect(self.stop_game)
         layout.addWidget(self.target_label)
         layout.addWidget(self.input_field)
@@ -556,9 +557,9 @@ class AppFrontend(QWidget):
         )
         self.w4_instructions.setText(instructions_text)
         self.w4_instructions.setMinimumHeight(150)
-        btn_start = QPushButton("Démarrer la session de maîtrise")
+        btn_start = AccessiblePushButton("Démarrer la session de maîtrise")
         btn_start.clicked.connect(self.start_week4_session)
-        btn_back = QPushButton("Retour")
+        btn_back = AccessiblePushButton("Retour")
         btn_back.clicked.connect(self.go_back_to_week_selection)
         layout.addWidget(QLabel("SEMAINE 4: MAÎTRISE"))
         layout.addWidget(self.w4_name_input)
@@ -592,7 +593,7 @@ class AppFrontend(QWidget):
         self.w4_input_field.textChanged.connect(self.check_week4_input)
         self.w4_phase_label = QLabel("")
         self.w4_phase_label.setStyleSheet("font-size: 14px; color: #f9d342;")
-        btn_quit = QPushButton("Quitter")
+        btn_quit = AccessiblePushButton("Quitter")
         btn_quit.clicked.connect(self.stop_week4_game)
         self.w4_timer = QTimer()
         self.w4_timer.timeout.connect(self.week4_time_out)
@@ -799,7 +800,7 @@ class AppFrontend(QWidget):
         self.w4_end_message.setReadOnly(True)
         end_text = "Félicitations !\nVous avez terminé l'aventure.\nAppuyez sur OK."
         self.w4_end_message.setText(end_text)
-        btn_ok = QPushButton("OK")
+        btn_ok = AccessiblePushButton("OK")
         btn_ok.clicked.connect(self.week4_end_ok)
         layout.addWidget(self.w4_end_message)
         layout.addWidget(btn_ok)
@@ -854,11 +855,11 @@ class AppFrontend(QWidget):
         # Buttons
         btn_row = QHBoxLayout()
 
-        btn_start = QPushButton("C'est parti !")
+        btn_start = AccessiblePushButton("C'est parti !")
         btn_start.clicked.connect(self.start_week6_challenge)
         btn_row.addWidget(btn_start)
         
-        btn_back = QPushButton("Retour")
+        btn_back = AccessiblePushButton("Retour")
         btn_back.clicked.connect(self.go_back_to_week_selection)
         btn_row.addWidget(btn_back)
         

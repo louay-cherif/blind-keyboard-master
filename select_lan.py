@@ -19,9 +19,10 @@ import os
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout,
-                             QLabel, QPushButton)
+                             QLabel)
 
 from w6challenge import AccessibleLabel, AccessibleBrowser
+from static.accessible_widgets import AccessiblePushButton
 
 # Path to the developer picture relative to this file
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -147,8 +148,8 @@ class LanguageSelector(QDialog):
         outer.addWidget(welcome_browser)
 
         # ---- Language buttons ----
-        btn_en = QPushButton("English")
-        btn_fr = QPushButton("Français")
+        btn_en = AccessiblePushButton("English")
+        btn_fr = AccessiblePushButton("Français")
         btn_en.clicked.connect(lambda: self.select_language('en'))
         btn_fr.clicked.connect(lambda: self.select_language('fr'))
         outer.addWidget(btn_en)

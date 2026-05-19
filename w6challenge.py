@@ -26,14 +26,15 @@ import os
 import csv
 import random
 import winsound
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
-                             QLabel, QStackedWidget, QDialog, QApplication, QMessageBox,
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
+                             QLineEdit, QLabel, QStackedWidget, QDialog, QApplication, QMessageBox,
                              QTextBrowser)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap
 from weeks import symbol_pronounciation, w6words
 from survival_mode import SurvivalMode
 from sentence_mode import SentenceMode
+from static.accessible_widgets import AccessiblePushButton
 
 
 # ============= ACCESSIBLE WIDGETS =============
@@ -193,7 +194,7 @@ class WarmupWelcomePage(QWidget):
         inst_field.setMinimumHeight(180)
         layout.addWidget(inst_field)
 
-        btn_ready = QPushButton(button_text)
+        btn_ready = AccessiblePushButton(button_text)
         btn_ready.clicked.connect(self._launch)
         layout.addWidget(btn_ready)
 
@@ -309,7 +310,7 @@ class GenericTypingMode(QWidget):
         self.input_field.textChanged.connect(self._on_input_changed)
         layout.addWidget(self.input_field)
 
-        btn_leave = QPushButton(button_text)
+        btn_leave = AccessiblePushButton(button_text)
         btn_leave.clicked.connect(self.leave_session)
         layout.addWidget(btn_leave)
 
@@ -615,7 +616,7 @@ class GenericTypingMode(QWidget):
         stats_browser.setMinimumHeight(220)
         layout.addWidget(stats_browser)
 
-        btn_return = QPushButton(button_text)
+        btn_return = AccessiblePushButton(button_text)
         btn_return.clicked.connect(lambda: self._return_to_challenge(dlg))
         layout.addWidget(btn_return)
 
@@ -664,8 +665,8 @@ class GenericTypingMode(QWidget):
         layout.addWidget(msg)
 
         btn_row = QHBoxLayout()
-        btn_yes = QPushButton("Yes, exit" if self.is_english else "Oui, quitter")
-        btn_no  = QPushButton("No, continue" if self.is_english else "Non, continuer")
+        btn_yes = AccessiblePushButton("Yes, exit" if self.is_english else "Oui, quitter")
+        btn_no  = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
         btn_yes.clicked.connect(dlg.accept)
         btn_no.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_yes)
@@ -794,7 +795,7 @@ class ComboWelcomePage(QWidget):
         inst_field.setMinimumHeight(300)
         layout.addWidget(inst_field)
 
-        btn_ready = QPushButton(button_text)
+        btn_ready = AccessiblePushButton(button_text)
         btn_ready.clicked.connect(self._launch)
         layout.addWidget(btn_ready)
 
@@ -926,7 +927,7 @@ class ComboTypingMode(GenericTypingMode):
         self.input_field.textChanged.connect(self._on_input_changed)
         layout.addWidget(self.input_field)
 
-        btn_leave = QPushButton(button_text)
+        btn_leave = AccessiblePushButton(button_text)
         btn_leave.clicked.connect(self.leave_session)
         layout.addWidget(btn_leave)
 
@@ -1274,11 +1275,11 @@ class ComboTypingMode(GenericTypingMode):
 
         btn_layout = QHBoxLayout()
 
-        btn_continue = QPushButton(btn_continue_text)
+        btn_continue = AccessiblePushButton(btn_continue_text)
         btn_continue.clicked.connect(self._continue_to_next_bonus_stage)
         btn_layout.addWidget(btn_continue)
 
-        btn_return = QPushButton(btn_return_text)
+        btn_return = AccessiblePushButton(btn_return_text)
         btn_return.clicked.connect(lambda: self._exit_bonus_stages(dlg))
         btn_layout.addWidget(btn_return)
 
@@ -1374,7 +1375,7 @@ class ComboTypingMode(GenericTypingMode):
         msg_browser.setMinimumHeight(180)
         layout.addWidget(msg_browser)
 
-        btn_return = QPushButton(button_text)
+        btn_return = AccessiblePushButton(button_text)
         btn_return.clicked.connect(lambda: self._return_to_challenge(dlg))
         layout.addWidget(btn_return)
 
@@ -1432,11 +1433,11 @@ class ComboTypingMode(GenericTypingMode):
 
         btn_layout = QHBoxLayout()
 
-        btn_continue = QPushButton(btn_continue_text)
+        btn_continue = AccessiblePushButton(btn_continue_text)
         btn_continue.clicked.connect(self._continue_to_next_bonus_stage)
         btn_layout.addWidget(btn_continue)
 
-        btn_return = QPushButton(btn_return_text)
+        btn_return = AccessiblePushButton(btn_return_text)
         btn_return.clicked.connect(lambda: self._end_session_and_return(dlg))
         btn_layout.addWidget(btn_return)
 
@@ -1552,7 +1553,7 @@ class ComboTypingMode(GenericTypingMode):
         msg_browser.setMinimumHeight(240)
         layout.addWidget(msg_browser)
 
-        btn_return = QPushButton(button_text)
+        btn_return = AccessiblePushButton(button_text)
         btn_return.clicked.connect(lambda: self._return_to_challenge(dlg))
         layout.addWidget(btn_return)
 
@@ -1587,8 +1588,8 @@ class ComboTypingMode(GenericTypingMode):
         layout.addWidget(msg)
 
         btn_row = QHBoxLayout()
-        btn_yes = QPushButton("Yes, exit" if self.is_english else "Oui, quitter")
-        btn_no  = QPushButton("No, continue" if self.is_english else "Non, continuer")
+        btn_yes = AccessiblePushButton("Yes, exit" if self.is_english else "Oui, quitter")
+        btn_no  = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
         btn_yes.clicked.connect(dlg.accept)
         btn_no.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_yes)
@@ -1710,7 +1711,7 @@ class PrecisionWelcomePage(QWidget):
         inst_field.setMinimumHeight(380)
         layout.addWidget(inst_field)
 
-        btn_ready = QPushButton(button_text)
+        btn_ready = AccessiblePushButton(button_text)
         btn_ready.clicked.connect(self._launch)
         layout.addWidget(btn_ready)
 
@@ -1876,7 +1877,7 @@ class PrecisionArenaMode(QWidget):
         self.input_field.textChanged.connect(self._on_input_changed)
         layout.addWidget(self.input_field)
 
-        btn_leave = QPushButton(button_text)
+        btn_leave = AccessiblePushButton(button_text)
         btn_leave.clicked.connect(self.leave_session)
         layout.addWidget(btn_leave)
 
@@ -2342,14 +2343,14 @@ class PrecisionArenaMode(QWidget):
         # Buttons
         btn_row = QHBoxLayout()
         if not passed:
-            btn_retry = QPushButton(retry_text)
+            btn_retry = AccessiblePushButton(retry_text)
             btn_retry.clicked.connect(lambda: self._retry(dlg))
             btn_row.addWidget(btn_retry)
-            btn_back = QPushButton(return_text)
+            btn_back = AccessiblePushButton(return_text)
             btn_back.clicked.connect(lambda: self._close_and_return(dlg))
             btn_row.addWidget(btn_back)
         else:
-            btn_go = QPushButton(go_back_text)
+            btn_go = AccessiblePushButton(go_back_text)
             btn_go.clicked.connect(lambda: self._close_and_return(dlg))
             btn_row.addWidget(btn_go)
 
@@ -2409,8 +2410,8 @@ class PrecisionArenaMode(QWidget):
         layout.addWidget(msg)
 
         btn_row = QHBoxLayout()
-        btn_yes = QPushButton("Yes, exit" if self.is_english else "Oui, quitter")
-        btn_no  = QPushButton("No, continue" if self.is_english else "Non, continuer")
+        btn_yes = AccessiblePushButton("Yes, exit" if self.is_english else "Oui, quitter")
+        btn_no  = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
         btn_yes.clicked.connect(dlg.accept)
         btn_no.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_yes)
@@ -2528,10 +2529,10 @@ class CrazyParty(QWidget):
         self.setStyleSheet("""
             QWidget     { background-color: #0f1626; color: #f9d342;
                           font-family: Arial; font-size: 22px; }
-            QPushButton { background-color: #16213e; border-radius: 10px;
+            AccessiblePushButton { background-color: #16213e; border-radius: 10px;
                           padding: 14px; color: white;
                           border: 2px solid #e94560; margin: 4px; }
-            QPushButton:hover { background-color: #e94560; }
+            AccessiblePushButton:hover { background-color: #e94560; }
             QLineEdit   { padding: 14px; background-color: #131b36;
                           color: #f9d342; border: 2px solid #f9d342;
                           border-radius: 10px; font-size: 28px; }
@@ -2755,10 +2756,10 @@ class CrazyParty(QWidget):
         layout.addWidget(browser)
 
         btn_row = QHBoxLayout()
-        btn_yes = QPushButton("I'm ready for it!" if self.is_english else "Je suis pret(e) !")
+        btn_yes = AccessiblePushButton("I'm ready for it!" if self.is_english else "Je suis pret(e) !")
         btn_yes.clicked.connect(dlg.accept)
         btn_row.addWidget(btn_yes)
-        btn_no = QPushButton("Not yet" if self.is_english else "Pas encore")
+        btn_no = AccessiblePushButton("Not yet" if self.is_english else "Pas encore")
         btn_no.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_no)
         layout.addLayout(btn_row)
@@ -3185,8 +3186,8 @@ class CrazyParty(QWidget):
         layout.addWidget(msg)
 
         btn_row = QHBoxLayout()
-        btn_yes = QPushButton("Yes, exit" if self.is_english else "Oui, quitter")
-        btn_no  = QPushButton("No, continue" if self.is_english else "Non, continuer")
+        btn_yes = AccessiblePushButton("Yes, exit" if self.is_english else "Oui, quitter")
+        btn_no  = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
         btn_yes.clicked.connect(dlg.accept)
         btn_no.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_yes)
@@ -3359,7 +3360,7 @@ class CrazyParty(QWidget):
 
         btn_row = QHBoxLayout()
         for label, cb in buttons:
-            btn = QPushButton(label)
+            btn = AccessiblePushButton(label)
             if cb:
                 btn.clicked.connect(lambda checked, c=cb: (dlg.accept(), c()))
             else:
@@ -3574,11 +3575,11 @@ class Week6UI(QWidget):
         self.setStyleSheet("""
             QWidget      { background-color: #0a0a12; color: #ffffff;
                            font-family: Arial; font-size: 24px; }
-            QPushButton  { background-color: #16213e; border-radius: 12px;
+            AccessiblePushButton  { background-color: #16213e; border-radius: 12px;
                            padding: 15px; color: white;
                            border: 2px solid #e94560; margin: 5px; }
-            QPushButton:hover    { background-color: #e94560; }
-            QPushButton:disabled { background-color: #444444;
+            AccessiblePushButton:hover    { background-color: #e94560; }
+            AccessiblePushButton:disabled { background-color: #444444;
                                    color: #888888; border-color: #666666; }
             QLineEdit    { padding: 18px; background-color: #1a1a2e;
                            color: #0fecb0; border: 2px solid #0fecb0;
@@ -3681,11 +3682,11 @@ class Week6UI(QWidget):
         layout.addWidget(instructions)
 
         btn_row   = QHBoxLayout()
-        btn_start = QPushButton(self.strings["id_button_start"])
+        btn_start = AccessiblePushButton(self.strings["id_button_start"])
         btn_start.clicked.connect(self.start_challenge)
         btn_row.addWidget(btn_start)
 
-        btn_back  = QPushButton(self.strings["id_button_back"])
+        btn_back  = AccessiblePushButton(self.strings["id_button_back"])
         btn_back.clicked.connect(self._go_back)
         btn_row.addWidget(btn_back)
 
@@ -3755,12 +3756,12 @@ class Week6UI(QWidget):
         for mode_key in ["warmup", "combo", "precision", "sentence", "survival", "crazy_party"]:
             data        = self.logic.modes[mode_key]
             status_text = self.logic.get_mode_status_text(mode_key)
-            btn = QPushButton(f"{data['name']}  {status_text}")
+            btn = AccessiblePushButton(f"{data['name']}  {status_text}")
             btn.clicked.connect(lambda checked, mk=mode_key: self._on_mode_clicked(mk))
             self.mode_buttons[mode_key] = btn
             layout.addWidget(btn)
 
-        btn_exit = QPushButton(self.strings["button_exit"])
+        btn_exit = AccessiblePushButton(self.strings["button_exit"])
         btn_exit.clicked.connect(self._exit_challenge)
         layout.addWidget(btn_exit)
 
@@ -3789,7 +3790,7 @@ class Week6UI(QWidget):
         message.setMinimumHeight(100)
         layout.addWidget(message)
 
-        btn_ok = QPushButton(self.strings["victory_button"])
+        btn_ok = AccessiblePushButton(self.strings["victory_button"])
         btn_ok.clicked.connect(self._on_victory_complete)
         layout.addWidget(btn_ok)
 

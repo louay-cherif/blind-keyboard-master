@@ -17,10 +17,11 @@
 
 import random
 import time
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                              QLineEdit, QLabel, QDialog, QTextBrowser)
 from PyQt5.QtCore import Qt, QTimer
 from weeks import sentences_en, sentences_fr
+from static.accessible_widgets import AccessiblePushButton
 
 
 class SentenceAccessibleLabel(QLabel):
@@ -197,13 +198,13 @@ class SentenceMode(QWidget):
         layout.addWidget(self.input_field)
 
         button_layout = QHBoxLayout()
-        self.btn_quit = QPushButton(
+        self.btn_quit = AccessiblePushButton(
             "Quit" if self.is_english else "Quitter"
         )
         self.btn_quit.clicked.connect(self.leave_session)
         button_layout.addWidget(self.btn_quit)
 
-        self.btn_hear_again = QPushButton(
+        self.btn_hear_again = AccessiblePushButton(
             "Repeat Current Word" if self.is_english else "Répéter le mot actuel"
         )
         self.btn_hear_again.clicked.connect(self.repeat_current_word)
@@ -293,11 +294,11 @@ class SentenceMode(QWidget):
         layout.addWidget(instructions)
 
         buttons = QHBoxLayout()
-        btn_start = QPushButton(start_text)
+        btn_start = AccessiblePushButton(start_text)
         btn_start.clicked.connect(lambda: self._start_typing_session(intro))
         buttons.addWidget(btn_start)
 
-        btn_cancel = QPushButton(cancel_text)
+        btn_cancel = AccessiblePushButton(cancel_text)
         btn_cancel.clicked.connect(intro.reject)
         buttons.addWidget(btn_cancel)
 
@@ -566,20 +567,20 @@ class SentenceMode(QWidget):
 
         button_layout = QHBoxLayout()
         if self.passed:
-            btn_back = QPushButton(
+            btn_back = AccessiblePushButton(
                 "Go Back to Challenge Battle" if self.is_english else
                 "Retour au Combat de Défi"
             )
             btn_back.clicked.connect(lambda: self._complete_and_close(dlg))
             button_layout.addWidget(btn_back)
         else:
-            btn_retry = QPushButton(
+            btn_retry = AccessiblePushButton(
                 "Retry" if self.is_english else "Recommencer"
             )
             btn_retry.clicked.connect(lambda: self._retry_from_results(dlg))
             button_layout.addWidget(btn_retry)
 
-            btn_back = QPushButton(
+            btn_back = AccessiblePushButton(
                 "Go Back to Challenge Battle" if self.is_english else
                 "Retour au Combat de Défi"
             )
