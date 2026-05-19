@@ -9,46 +9,12 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                              QLineEdit, QLabel, QDialog, QTextBrowser, QApplication)
 from PyQt5.QtCore import Qt, QTimer
 from weeks import symbol_pronounciation, w6words
-from static.accessible_widgets import AccessiblePushButton
+from static.accessible_widgets import AccessiblePushButton, AccessibleLabel, AccessibleBrowser
 
 
-# ============= ACCESSIBLE WIDGETS =============
-
-class SurvivalAccessibleLabel(QLabel):
-    """Focusable label with separate visual and screen-reader text."""
-
-    def __init__(self, visual_text="", accessible_text="", parent=None):
-        super().__init__(visual_text, parent)
-        self.setFocusPolicy(Qt.TabFocus)
-        self.setAccessibleName(accessible_text if accessible_text else visual_text)
-        self.setStyleSheet(
-            "padding: 12px; background-color: #1a1a2e; color: #f9d342;"
-            "border: 2px solid #f9d342; border-radius: 10px; font-size: 22px;"
-        )
-        self.setAlignment(Qt.AlignCenter)
-        self.setWordWrap(True)
-
-    def update_text(self, visual_text, accessible_text=None):
-        self.setText(visual_text)
-        self.setAccessibleName(
-            accessible_text if accessible_text is not None else visual_text
-        )
-
-
-class SurvivalAccessibleBrowser(QTextBrowser):
-    """Read-only multiline browser for long descriptions and dialogs."""
-
-    def __init__(self, text="", accessible_text="", parent=None):
-        super().__init__(parent)
-        self.setReadOnly(True)
-        self.setOpenExternalLinks(False)
-        self.setPlainText(text)
-        self.setFocusPolicy(Qt.TabFocus)
-        self.setAccessibleName(accessible_text if accessible_text else text)
-        self.setStyleSheet(
-            "padding: 14px; background-color: #1a1a2e; color: #f9d342;"
-            "border: 2px solid #f9d342; border-radius: 10px; font-size: 20px;"
-        )
+# Create aliases for backward compatibility with existing code
+SurvivalAccessibleLabel = AccessibleLabel
+SurvivalAccessibleBrowser = AccessibleBrowser
 
 
 class SurvivalTypingInput(QLineEdit):

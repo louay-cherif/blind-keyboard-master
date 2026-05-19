@@ -34,67 +34,8 @@ from PyQt5.QtGui import QPixmap
 from weeks import symbol_pronounciation, w6words
 from survival_mode import SurvivalMode
 from sentence_mode import SentenceMode
-from static.accessible_widgets import AccessiblePushButton
+from static.accessible_widgets import AccessiblePushButton, AccessibleLabel, AccessibleBrowser
 
-
-# ============= ACCESSIBLE WIDGETS =============
-
-class AccessibleLabel(QLabel):
-    """
-    A keyboard-focusable QLabel with separate visual and accessible text.
-
-    visual_text      -  compact text shown on screen  (e.g. "50/1500").
-    accessible_text  -  verbose text read by screen reader on focus
-                      (e.g. "50 out of 1500 XP balance").
-
-    Tab-focusable so blind users can navigate with the keyboard.
-    """
-
-    def __init__(self, visual_text="", accessible_text="", parent=None):
-        super().__init__(visual_text, parent)
-        self.setFocusPolicy(Qt.TabFocus)
-        self.setAccessibleName(accessible_text if accessible_text else visual_text)
-        self.setStyleSheet(
-            "padding: 12px;"
-            "background-color: #1a1a2e;"
-            "color: #f9d342;"
-            "border: 2px solid #f9d342;"
-            "border-radius: 10px;"
-            "font-size: 22px;"
-        )
-        self.setAlignment(Qt.AlignCenter)
-        self.setWordWrap(True)
-
-    def update_text(self, visual_text, accessible_text=None):
-        """Update both displayed and screen-reader text in one call."""
-        self.setText(visual_text)
-        self.setAccessibleName(
-            accessible_text if accessible_text is not None else visual_text
-        )
-
-
-class AccessibleBrowser(QTextBrowser):
-    """
-    Read-only word-wrapped text area for long multiline content.
-    Replaces readonly QLineEdit for paragraphs and descriptions.
-    Tab-focusable; screen reader announces full content on focus.
-    """
-
-    def __init__(self, text="", accessible_text="", parent=None):
-        super().__init__(parent)
-        self.setReadOnly(True)
-        self.setOpenExternalLinks(False)
-        self.setPlainText(text)
-        self.setFocusPolicy(Qt.TabFocus)
-        self.setAccessibleName(accessible_text if accessible_text else text)
-        self.setStyleSheet(
-            "padding: 14px;"
-            "background-color: #1a1a2e;"
-            "color: #f9d342;"
-            "border: 2px solid #f9d342;"
-            "border-radius: 10px;"
-            "font-size: 20px;"
-        )
 
 
 
@@ -163,7 +104,8 @@ class WarmupWelcomePage(QWidget):
                 "Type the characters as they appear. Stay focused and keep typing.\n"
                 "Ready? Let's begin!"
             )
-            button_text  = "I Am Ready"
+            ready_text   = "I Am Ready"
+            notyet_text  = "Not Yet"
         else:
             title_text   = "PORTE RÉCHAUFFEMENT  -  Phase d'Entraînement 1"
             welcome_text = "Bienvenue à l'Entraînement"
@@ -174,7 +116,8 @@ class WarmupWelcomePage(QWidget):
                 "Tapez les caractères au fur et à mesure qu'ils apparaissent. Restez concentré.\n"
                 "Prêt ? Commençons !"
             )
-            button_text  = "Je Suis Prêt"
+            ready_text   = "Je Suis Prêt"
+            notyet_text  = "Pas encore"
 
         title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
         title.setStyleSheet(
@@ -194,10 +137,16 @@ class WarmupWelcomePage(QWidget):
         inst_field.setMinimumHeight(180)
         layout.addWidget(inst_field)
 
-        btn_ready = AccessiblePushButton(button_text)
+        btn_layout = QHBoxLayout()
+        btn_ready = AccessiblePushButton(ready_text)
         btn_ready.clicked.connect(self._launch)
-        layout.addWidget(btn_ready)
+        btn_layout.addWidget(btn_ready)
 
+        btn_notyet = AccessiblePushButton(notyet_text)
+        btn_notyet.clicked.connect(self.close)
+        btn_layout.addWidget(btn_notyet)
+
+        layout.addLayout(btn_layout)
         layout.addStretch()
         self.setLayout(layout)
 
@@ -205,7 +154,6 @@ class WarmupWelcomePage(QWidget):
         if hasattr(self.parent_challenge, 'launch_warmup_session'):
             self.parent_challenge.launch_warmup_session()
         self.close()
-
 
 # ============= GENERIC TYPING MODE =============
 
@@ -751,7 +699,8 @@ class ComboWelcomePage(QWidget):
                 "Complete Stage 3 with ≥70% accuracy to succeed and damage the boss.\n"
                 "Below 70%: Retry later. At or above 70%: +40 XP and -15% boss health!"
             )
-            button_text = "I Am Ready"
+            ready_text = "I Am Ready"
+            notyet_text = "Not Yet"
         else:
             title_text = "COMBO RUSH  -  Défi de Multiplicateur par Étape"
             welcome_text = "Bienvenue au Mode Combo"
@@ -775,7 +724,8 @@ class ComboWelcomePage(QWidget):
                 "Terminez l'étape 3 avec ≥70 % de précision pour réussir et endommager le boss.\n"
                 "Moins de 70 % : Réessayez plus tard. 70 % ou plus : +40 XP et -15 % de santé du boss !"
             )
-            button_text = "Je Suis Prêt"
+            ready_text = "Je Suis Prêt"
+            notyet_text = "Pas encore"
 
         title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
         title.setStyleSheet(
@@ -795,10 +745,16 @@ class ComboWelcomePage(QWidget):
         inst_field.setMinimumHeight(300)
         layout.addWidget(inst_field)
 
-        btn_ready = AccessiblePushButton(button_text)
+        btn_layout = QHBoxLayout()
+        btn_ready = AccessiblePushButton(ready_text)
         btn_ready.clicked.connect(self._launch)
-        layout.addWidget(btn_ready)
+        btn_layout.addWidget(btn_ready)
 
+        btn_notyet = AccessiblePushButton(notyet_text)
+        btn_notyet.clicked.connect(self.close)
+        btn_layout.addWidget(btn_notyet)
+
+        layout.addLayout(btn_layout)
         layout.addStretch()
         self.setLayout(layout)
 
@@ -806,7 +762,6 @@ class ComboWelcomePage(QWidget):
         if hasattr(self.parent_challenge, 'launch_combo_session'):
             self.parent_challenge.launch_combo_session()
         self.close()
-
 
 # ============= COMBO MODE TYPING SESSION =============
 
@@ -1678,7 +1633,8 @@ class PrecisionWelcomePage(QWidget):
                 "REWARDS on success: +50 XP, -15% boss health, plus medal bonus XP.\n"
                 "Failed run: retry anytime. Progress is always saved."
             )
-            button_text  = "I'm ready for it!"
+            ready_text  = "I'm ready for it!"
+            notyet_text = "Not Yet"
         else:
             title_text   = "PRECISION ARENA - Marathon de Precision"
             instructions = (
@@ -1698,7 +1654,8 @@ class PrecisionWelcomePage(QWidget):
                 "Reussite : +50 XP, -15% sante boss, plus XP bonus de medaille.\n"
                 "Echec : recommencez quand vous voulez."
             )
-            button_text  = "Je suis pret !"
+            ready_text  = "Je suis pret !"
+            notyet_text = "Pas encore"
 
         title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
         title.setStyleSheet(
@@ -1711,10 +1668,16 @@ class PrecisionWelcomePage(QWidget):
         inst_field.setMinimumHeight(380)
         layout.addWidget(inst_field)
 
-        btn_ready = AccessiblePushButton(button_text)
+        btn_layout = QHBoxLayout()
+        btn_ready = AccessiblePushButton(ready_text)
         btn_ready.clicked.connect(self._launch)
-        layout.addWidget(btn_ready)
+        btn_layout.addWidget(btn_ready)
 
+        btn_notyet = AccessiblePushButton(notyet_text)
+        btn_notyet.clicked.connect(self.close)
+        btn_layout.addWidget(btn_notyet)
+
+        layout.addLayout(btn_layout)
         layout.addStretch()
         self.setLayout(layout)
 
@@ -1722,7 +1685,6 @@ class PrecisionWelcomePage(QWidget):
         if hasattr(self.parent_challenge, 'launch_precision_session'):
             self.parent_challenge.launch_precision_session()
         self.close()
-
 
 # ============= PRECISION ARENA TYPING MODE =============
 
@@ -3435,8 +3397,6 @@ class Week6Logic:
         mode["status"]    = "done"
         mode["completed"] = True
         self.completed_modes_count += 1
-        self.boss_health = max(0, self.boss_health - 20)
-        self.add_xp(225)
         if self.completed_modes_count >= 1:
             for mk, data in self.modes.items():
                 if mk != "crazy_party" and not data["completed"]:
@@ -3463,7 +3423,7 @@ class Week6Logic:
             return "[ouvert]  -  Appuyez Entrée pour commencer"
 
     def is_challenge_complete(self):
-        return self.xp_balance >= self.xp_max and self.modes["crazy_party"]["completed"]
+        return self.xp_balance >= self.xp_max and self.boss_health <= 0 and self.modes["crazy_party"]["completed"]
 
     def load_progress(self):
         if not self.user_name:
@@ -3769,31 +3729,94 @@ class Week6UI(QWidget):
         self.pages.addWidget(page)
 
     def _setup_victory_page(self):
-        """Page 2  -  victory screen."""
-        page   = QWidget()
+        """Page 2 - redesigned victory screen with user name, story, and two action buttons."""
+        page = QWidget()
         layout = QVBoxLayout()
+        layout.setSpacing(20)
 
+        # Title
         title = AccessibleLabel(
             visual_text=self.strings["victory_title"],
             accessible_text=self.strings["victory_title"],
         )
         title.setStyleSheet(
-            "font-size: 38px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none;"
+            "font-size: 42px; font-weight: bold; color: #0fecb0;"
+            "background-color: transparent; border: none; padding: 20px;"
         )
         layout.addWidget(title)
 
-        message = AccessibleLabel(
-            visual_text=self.strings["victory_message"],
-            accessible_text=self.strings["victory_accessible"],
+        # Congratulation message (includes user name)
+        user_name = self.logic.user_name if self.logic.user_name else "Champion"
+        if self.is_english:
+            congrats = f"Congratulations, {user_name}!"
+        else:
+            congrats = f"Félicitations, {user_name} !"
+
+        congrats_label = AccessibleLabel(
+            visual_text=congrats,
+            accessible_text=congrats,
         )
-        message.setMinimumHeight(100)
-        layout.addWidget(message)
+        congrats_label.setStyleSheet(
+            "font-size: 28px; font-weight: bold; color: #e94560;"
+            "background-color: transparent; border: none; padding: 10px;"
+        )
+        layout.addWidget(congrats_label)
 
-        btn_ok = AccessiblePushButton(self.strings["victory_button"])
-        btn_ok.clicked.connect(self._on_victory_complete)
-        layout.addWidget(btn_ok)
+        # Detailed story in an accessible browser
+        if self.is_english:
+            story = (
+                f"You have successfully completed all six modes of the Ultimate Challenge!\n\n"
+                f"• Warmup Gate – survived 8 minutes of continuous typing.\n"
+                f"• Combo Rush – mastered the multiplier stages.\n"
+                f"• Precision Arena – earned your medal through accuracy and speed.\n"
+                f"• Sentence Mode – proved your command of full sentences.\n"
+                f"• Survival Gate – endured the hardest waves.\n"
+                f"• Crazy Keyboard Party – fought in the risk zone and reached safety.\n\n"
+                f"Your journey as a Blind Keyboard Master has reached a new peak. "
+                f"The boss is defeated, and the keyboard now bends to your will.\n\n"
+                f"May this skill serve you in all your future adventures. "
+                f"Keep typing, keep improving, and never stop challenging yourself.\n\n"
+                f"You can now return to the challenge battle to replay any mode freely, "
+                f"or go back to the week selection page to continue your overall progress."
+            )
+        else:
+            story = (
+                f"Vous avez réussi à terminer les six modes du Défi Ultime !\n\n"
+                f"• Porte Réchauffement – survécu 8 minutes de frappe continue.\n"
+                f"• Combo Rush – maîtrisé les étapes à multiplicateur.\n"
+                f"• Precision Arena – décroché votre médaille par la précision et la vitesse.\n"
+                f"• Mode Phrase – prouvé votre maîtrise des phrases complètes.\n"
+                f"• Porte de Survie – enduré les vagues les plus difficiles.\n"
+                f"• Fête Folle Clavier – combattu en zone risquée et atteint la zone sûre.\n\n"
+                f"Votre parcours en tant que Maître du Clavier Aveugle a atteint un nouveau sommet. "
+                f"Le boss est vaincu, et le clavier s'incline devant vous.\n\n"
+                f"Que cette compétence vous serve dans toutes vos aventures futures. "
+                f"Continuez à taper, à vous améliorer, et ne cessez jamais de vous défier.\n\n"
+                f"Vous pouvez maintenant retourner au combat de défi pour rejouer n'importe quel mode librement, "
+                f"ou revenir à la page de sélection des semaines pour poursuivre votre progression globale."
+            )
 
+        story_browser = AccessibleBrowser(text=story, accessible_text=story)
+        story_browser.setMinimumHeight(300)
+        layout.addWidget(story_browser)
+
+        # Button row
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(20)
+
+        btn_week = AccessiblePushButton(
+            "Return to Week Selection" if self.is_english else "Retour à la sélection des semaines"
+        )
+        btn_week.clicked.connect(self._go_to_week_selection)
+        btn_layout.addWidget(btn_week)
+
+        btn_challenge = AccessiblePushButton(
+            "Return to Challenge Battle" if self.is_english else "Retour au combat de défi"
+        )
+        btn_challenge.clicked.connect(self._go_to_challenge_battle)
+        btn_layout.addWidget(btn_challenge)
+
+        layout.addLayout(btn_layout)
         layout.addStretch()
         page.setLayout(layout)
         self.pages.addWidget(page)
@@ -3874,7 +3897,7 @@ class Week6UI(QWidget):
             self._start_crazy_party()
             return
 
-        # Other modes (placeholder until implemented)
+        # Other modes (was used as a placeholder until implemented, but currently kept as a safety when developer is adding new modes)
         if not mode["completed"]:
             self.logic.mark_mode_complete(mode_key)
             self.logic.save_progress()
@@ -3894,6 +3917,17 @@ class Week6UI(QWidget):
                 self.base_logic.speaker.output(
                     self.strings["mode_replay"].format(name=mode["name"])
                 )
+
+    def _go_to_week_selection(self):
+        """Exit the challenge and return to the main week selection screen."""
+        self.logic.save_progress()
+        self.base_logic.reset()   # assumes base_logic has reset() that goes to week selection
+        self.close()
+
+    def _go_to_challenge_battle(self):
+        """Return to the challenge battle page (index 1) without resetting progress."""
+        self.pages.setCurrentIndex(1)
+        self.update_display()
 
     def _start_warmup_typing(self):
         """Show the warmup welcome page as a separate maximised window."""

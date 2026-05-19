@@ -24,8 +24,7 @@ from PyQt5.QtCore import Qt, QTimer, QUrl
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from weeks import Week4Logic
-from w6challenge import AccessibleBrowser, AccessibleLabel
-from static.accessible_widgets import AccessiblePushButton
+from static.accessible_widgets import AccessibleBrowser, AccessibleLabel, AccessiblePushButton
 
 # Developer picture path
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
