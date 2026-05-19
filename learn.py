@@ -1,8 +1,9 @@
 import sys, wikipedia, re
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, 
-                             QLineEdit, QPushButton, QComboBox, QSpinBox)
+                             QLineEdit, QComboBox, QSpinBox)
 from PyQt5.QtCore import Qt, QTimer
 from accessible_output2.outputs import auto
+from static.accessible_widgets import AccessiblePushButton
 
 class FlexibleTypingTutor(QWidget):
     def __init__(self):
@@ -21,7 +22,7 @@ class FlexibleTypingTutor(QWidget):
         self.sentence_count = QSpinBox(minimum=1, value=5)
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["Lettres", "Mots"])
-        self.btn_start = QPushButton("Démarrer")
+        self.btn_start = AccessiblePushButton("Démarrer")
         self.status_label = QLabel("Cible")
         self.type_input = QLineEdit(enabled=False)
 

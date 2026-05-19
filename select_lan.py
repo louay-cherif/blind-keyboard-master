@@ -21,8 +21,7 @@ from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout,
                              QLabel)
 
-from w6challenge import AccessibleLabel, AccessibleBrowser
-from static.accessible_widgets import AccessiblePushButton
+from static.accessible_widgets import AccessibleLabel, AccessibleBrowser, AccessiblePushButton
 
 # Path to the developer picture relative to this file
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
