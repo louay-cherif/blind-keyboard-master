@@ -45,8 +45,7 @@ class ChallengeTypingInput(QLineEdit):
     """
     Typing input used across all Week 6 modes.
     - Ctrl alone: repeat current target (mode must implement repeat_current_target).
-    - Shift+Enter: show status / danger info (mode must implement show_status if desired).
-    - Ctrl+Q is handled by CrazyParty only; other modes use Shift+Enter for exit dialog.
+    - Shift+Enter: exit confirmation dialog (all modes).
     Any other key: normal typing, and if mode has on_typing_key_pressed it is called.
     """
 
@@ -61,13 +60,7 @@ class ChallengeTypingInput(QLineEdit):
                 self.mode.repeat_current_target()
             return
 
-        # Ctrl+Q: exit (used by CrazyParty)
-        if event.key() == Qt.Key_Q and event.modifiers() & Qt.ControlModifier:
-            if hasattr(self.mode, '_on_ctrl_q'):
-                self.mode._on_ctrl_q()
-            return
-
-        # Shift+Enter: exit confirmation dialog for non-crazy-party modes
+        # Shift+Enter: exit confirmation dialog (all modes)
         if (event.key() in (Qt.Key_Return, Qt.Key_Enter)
                 and event.modifiers() & Qt.ShiftModifier):
             if hasattr(self.mode, '_on_shift_enter'):
@@ -2422,22 +2415,30 @@ class PrecisionArenaMode(QWidget):
 # ============= CRAZY PARTY =============
 
 class CrazyPartyTypingInput(QLineEdit):
-    """Typing input for Crazy Party with Ctrl repeat, Ctrl+Q exit, Shift+Enter status."""
+    """Typing input for Crazy Party: Ctrl=repeat, Shift+Enter=exit, Ctrl+Enter=status."""
     def __init__(self, mode, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.mode = mode
 
     def keyPressEvent(self, event):
+        # Ctrl alone: repeat target
         if event.key() == Qt.Key_Control:
             self.mode.repeat_current_target()
             return
-        if event.key() == Qt.Key_Q and event.modifiers() & Qt.ControlModifier:
-            self.mode._on_ctrl_q()
-            return
+
+        # Shift+Enter: exit confirmation dialog (universal for all modes)
         if (event.key() in (Qt.Key_Return, Qt.Key_Enter)
                 and event.modifiers() & Qt.ShiftModifier):
+            self.mode._on_shift_enter()
+            return
+
+        # Ctrl+Enter: show status in CrazyParty
+        if (event.key() in (Qt.Key_Return, Qt.Key_Enter)
+                and event.modifiers() & Qt.ControlModifier):
             self.mode._announce_status()
             return
+
+        # Any other key: interrupt TTS
         self.mode.on_typing_key_pressed()
         super().keyPressEvent(event)
 
@@ -2571,9 +2572,9 @@ class CrazyParty(QWidget):
 
         # Help hint
         hint = (
-            "Ctrl: repeat target  |  Ctrl+Q: exit  |  Shift+Enter: status"
+            "Ctrl: repeat target  |  Shift+Enter: exit  |  Ctrl+Enter: status"
             if self.is_english else
-            "Ctrl: repeter  |  Ctrl+Q: quitter  |  Maj+Entree: statut"
+            "Ctrl: repeter  |  Maj+Entree: quitter  |  Ctrl+Entree: statut"
         )
         hint_lbl = AccessibleLabel(hint, hint)
         hint_lbl.setStyleSheet(
@@ -2689,7 +2690,7 @@ class CrazyParty(QWidget):
                 "- Error or timeout: divides by 2.\n\n"
                 "WORD TARGETS: Occasional words appear. Type one correctly to deal "
                 "1% boss health damage. Incorrect words do nothing special.\n\n"
-                "Ctrl: repeat target. Ctrl+Q: exit. Shift+Enter: show status.\n\n"
+                "Ctrl: repeat target. Shift+Enter: exit. Ctrl+Enter: show status.\n\n"
                 "This is the highest-reward mode. Play for as long as you survive!"
             )
         else:
@@ -2709,7 +2710,7 @@ class CrazyParty(QWidget):
                 "- Erreur ou delai : divise par 2.\n\n"
                 "CIBLES MOT : Des mots apparaissent parfois. Tapez-en un correctement "
                 "pour infliger 1% de degats au boss. Un mot incorrect ne fait rien de special.\n\n"
-                "Ctrl : repeter. Ctrl+Q : quitter. Maj+Entree : statut.\n\n"
+                "Ctrl : repeter. Maj+Entree : quitter. Ctrl+Entree : statut.\n\n"
                 "C'est le mode le plus rentable. Jouez aussi longtemps que vous survivez !"
             )
 
@@ -3084,7 +3085,7 @@ class CrazyParty(QWidget):
     # ---- Shortcuts ----
 
     def _announce_status(self):
-        """Shift+Enter: announce hearts and danger."""
+        """Ctrl+Enter: announce hearts and danger with delay."""
         msg = (
             f"Hearts: {self.current_hearts}. Danger: {self.current_danger}."
             if self.is_english else
@@ -3092,6 +3093,10 @@ class CrazyParty(QWidget):
         )
         if self.base_logic.speaker:
             self.base_logic.speaker.output(msg)
+
+    def _on_shift_enter(self):
+        """Shift+Enter: exit confirmation dialog. Calls the same logic as _on_ctrl_q."""
+        self._on_ctrl_q()
 
     def _on_ctrl_q(self):
         """Ctrl+Q: exit confirmation dialog. Logic differs per zone."""
