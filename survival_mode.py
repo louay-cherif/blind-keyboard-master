@@ -246,6 +246,7 @@ class SurvivalMode(QWidget):
 
     def start_session(self):
         if not self._show_welcome_dialog():
+            self.close()
             return
 
         self._reset_state()
@@ -359,11 +360,13 @@ class SurvivalMode(QWidget):
             "I'm ready for it!" if self.is_english else "Je suis pret(e) !"
         )
         btn_ready.setAutoDefault(False)
+        btn_ready.setDefault(False)
         btn_ready.clicked.connect(dlg.accept)
         btn_row.addWidget(btn_ready)
 
         btn_not_yet = AccessiblePushButton("Not yet" if self.is_english else "Pas encore")
         btn_not_yet.setAutoDefault(False)
+        btn_not_yet.setDefault(False)
         btn_not_yet.setFocus()
         btn_not_yet.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_not_yet)
@@ -459,7 +462,9 @@ class SurvivalMode(QWidget):
         if char in symbol_pronounciation:
             return symbol_pronounciation[char]
         if char.isupper() and char.isalpha():
-            return f"{char.lower()} majuscule"
+            if char == "Y":
+                return "ay capital" if self.is_english else "i grec majuscule"
+            return f"{char.lower()} capital" if self.is_english else f"{char.lower()} majuscule"
         return char
 
     def _get_timeout_ms(self, target):
@@ -530,15 +535,21 @@ class SurvivalMode(QWidget):
         self._tts_waiting = True
         self.session_timer.stop()
         self.target_timer.stop()
+        self.countdown_timer.stop()
 
     def _resume_timers(self):
         if not self._tts_waiting:
             return
         self._tts_waiting = False
-        if self.elapsed_seconds < self.SESSION_DURATION:
-            if not self.session_timer.isActive():
-                self.session_timer.start()
-        self.target_timer.start(self._get_timeout_ms(self.current_target))
+
+        if self.countdown_display.isVisible() and self.countdown_value > 0:
+            self.countdown_timer.start()
+        else:
+            if self.elapsed_seconds < self.SESSION_DURATION:
+                if not self.session_timer.isActive():
+                    self.session_timer.start()
+            if self.current_target:
+                self.target_timer.start(self._get_timeout_ms(self.current_target))
         try:
             self.input_field.setFocus()
         except Exception:
@@ -772,6 +783,7 @@ class SurvivalMode(QWidget):
                 pass
 
         if self.parent_challenge:
+            self.parent_challenge.pages.setCurrentIndex(1)
             self.parent_challenge.update_display()
             self.parent_challenge.logic.save_progress()
 
@@ -942,13 +954,19 @@ class SurvivalMode(QWidget):
         if dlg.exec_() == QDialog.Accepted:
             self._apply_failure_penalty()
             if self.parent_challenge:
+                self.parent_challenge.pages.setCurrentIndex(1)
                 self.parent_challenge.update_display()
                 self.parent_challenge.logic.save_progress()
+            self._closing = True
             self.close()
         else:
             # Resume session
-            self.session_timer.start()
-            self.target_timer.start(self._get_timeout_ms(self.current_target))
+            if self.countdown_display.isVisible() and self.countdown_value > 0:
+                self.countdown_timer.start()
+            else:
+                self.session_timer.start()
+                if self.current_target:
+                    self.target_timer.start(self._get_timeout_ms(self.current_target))
             self._closing = False
 
     def closeEvent(self, event):
