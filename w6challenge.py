@@ -1,4 +1,3 @@
-
 # Blind Keyboard Master - keyboard learning app accessible for visually impaired people
 # Copyright (C) 2026 Louay Cherif
 #
@@ -17,8 +16,6 @@
 
 """
 Week 6: Ultimate Challenge - Final comprehensive keyboard mastery mode
-Includes WarmupWelcomePage, GenericTypingMode (warmup session), Week6Logic, Week6UI.
-All accessible widgets defined here; imported by english.py and french.py.
 """
 
 import time
@@ -37,16 +34,15 @@ from sentence_mode import SentenceMode
 from static.accessible_widgets import AccessiblePushButton, AccessibleLabel, AccessibleBrowser
 
 
-
-
 # ============= SHARED TYPING INPUT WITH KEYBOARD SHORTCUTS =============
 
 class ChallengeTypingInput(QLineEdit):
     """
     Typing input used across all Week 6 modes.
-    - Ctrl alone: repeat current target (mode must implement repeat_current_target).
-    - Shift+Enter: exit confirmation dialog (all modes).
-    Any other key: normal typing, and if mode has on_typing_key_pressed it is called.
+    - Ctrl alone: repeat current target.
+    - Shift+Enter: exit confirmation dialog (penalty).
+    - Shift+Ctrl: announce status.
+    - Any other key: interrupt TTS / resume timers.
     """
 
     def __init__(self, mode, *args, **kwargs):
@@ -55,29 +51,35 @@ class ChallengeTypingInput(QLineEdit):
 
     def keyPressEvent(self, event):
         # Ctrl alone: repeat target
-        if event.key() == Qt.Key_Control:
+        if event.key() == Qt.Key_Control and event.modifiers() == Qt.ControlModifier:
             if hasattr(self.mode, 'repeat_current_target'):
                 self.mode.repeat_current_target()
             return
 
-        # Shift+Enter: exit confirmation dialog (all modes)
+        # Shift+Enter: exit confirmation
         if (event.key() in (Qt.Key_Return, Qt.Key_Enter)
                 and event.modifiers() & Qt.ShiftModifier):
             if hasattr(self.mode, '_on_shift_enter'):
                 self.mode._on_shift_enter()
             return
 
-        # Any other key: interrupt TTS / resume timers if mode supports it
+        # Shift+Ctrl: announce status
+        if (event.key() == Qt.Key_Control
+                and event.modifiers() & Qt.ShiftModifier):
+            if hasattr(self.mode, '_announce_status'):
+                self.mode._announce_status()
+            return
+
+        # Any other key: interrupt TTS / resume timers
         if hasattr(self.mode, 'on_typing_key_pressed'):
             self.mode.on_typing_key_pressed()
 
         super().keyPressEvent(event)
 
 
+# ============= WARMUP WELCOME PAGE =============
 
 class WarmupWelcomePage(QWidget):
-    """Welcome screen shown before the Warmup typing session."""
-
     def __init__(self, parent, is_english=True):
         super().__init__()
         self.parent_challenge = parent
@@ -86,9 +88,8 @@ class WarmupWelcomePage(QWidget):
 
     def _setup_ui(self):
         layout = QVBoxLayout()
-
         if self.is_english:
-            title_text   = "WARMUP GATE  -  Training Phase 1"
+            title_text   = "WARMUP GATE - Training Phase 1"
             welcome_text = "Welcome to Warmup Training"
             instructions = (
                 "You are entering the first training phase of Boss Mode.\n"
@@ -100,7 +101,7 @@ class WarmupWelcomePage(QWidget):
             ready_text   = "I Am Ready"
             notyet_text  = "Not Yet"
         else:
-            title_text   = "PORTE RÉCHAUFFEMENT  -  Phase d'Entraînement 1"
+            title_text   = "PORTE RECHauffEMENT - Phase d'Entraînement 1"
             welcome_text = "Bienvenue à l'Entraînement"
             instructions = (
                 "Vous entrez dans la première phase d'entraînement du Mode Boss.\n"
@@ -113,17 +114,11 @@ class WarmupWelcomePage(QWidget):
             notyet_text  = "Pas encore"
 
         title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
-        title.setStyleSheet(
-            "font-size: 28px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none; padding: 8px;"
-        )
+        title.setStyleSheet("font-size: 28px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 8px;")
         layout.addWidget(title)
 
         welcome = AccessibleLabel(visual_text=welcome_text, accessible_text=welcome_text)
-        welcome.setStyleSheet(
-            "font-size: 20px; font-weight: bold; color: #e94560;"
-            "background-color: transparent; border: none; padding: 4px;"
-        )
+        welcome.setStyleSheet("font-size: 20px; font-weight: bold; color: #e94560; background-color: transparent; border: none; padding: 4px;")
         layout.addWidget(welcome)
 
         inst_field = AccessibleBrowser(text=instructions, accessible_text=instructions)
@@ -148,12 +143,13 @@ class WarmupWelcomePage(QWidget):
             self.parent_challenge.launch_warmup_session()
         self.close()
 
-# ============= GENERIC TYPING MODE =============
+
+# ============= GENERIC TYPING MODE (Warmup) =============
 
 class GenericTypingMode(QWidget):
     """
-    Reusable 8-minute typing session for all Week 6 battle modes.
-    Override get_random_target() in subclasses for different character pools.
+    Reusable 8-minute typing session.
+    Override get_random_target() in subclasses.
     """
 
     def __init__(self, base_logic, mode_name="Warmup Gate", is_english=True, parent=None):
@@ -163,15 +159,13 @@ class GenericTypingMode(QWidget):
         self.is_english       = is_english
         self.parent_challenge = parent
 
-        # Session state
         self.session_start_time = None
-        self.session_duration   = 480        # 8 minutes
+        self.session_duration   = 480
         self.current_target     = ""
         self.target_start_time  = None
         self.target_timeout     = 2.0
         self._original_target   = ""
 
-        # Stats
         self.correct_count   = 0
         self.incorrect_count = 0
         self.timeout_count   = 0
@@ -179,74 +173,52 @@ class GenericTypingMode(QWidget):
         self.session_xp      = 0.0
         self.accuracy        = 0.0
 
-        # CSV
         self.warmup_csv_path = None
+        self._announcement_paused = False
 
         self._setup_ui()
         self._setup_timers()
 
-    # ---- UI ----
-
     def _setup_ui(self):
         layout = QVBoxLayout()
-
         if self.is_english:
-            mode_label_text   = "WARMUP GATE  -  Continuous Practice"
+            mode_label_text   = "WARMUP GATE - Continuous Practice"
             instructions_text = (
                 "Type each character that appears.\n"
-                "Incorrect entries and timeouts do not stop the session  -  keep typing!"
+                "Incorrect entries and timeouts do not stop the session - keep typing!"
             )
             xp_text           = "XP Earned: 0"
             timer_text        = "Time: 8:00"
             button_text       = "Leave and Go Back to Challenge Battle"
         else:
-            mode_label_text   = "PORTE RÉCHAUFFEMENT  -  Pratique Continue"
+            mode_label_text   = "PORTE RECHauffEMENT - Pratique Continue"
             instructions_text = (
                 "Tapez chaque caractère qui apparaît.\n"
-                "Les erreurs et dépassements ne stoppent pas la session  -  continuez !"
+                "Les erreurs et dépassements ne stoppent pas la session - continuez !"
             )
             xp_text           = "XP Gagné : 0"
             timer_text        = "Temps : 8:00"
             button_text       = "Quitter et Retourner au Combat de Défi"
 
-        mode_title = AccessibleLabel(
-            visual_text=mode_label_text, accessible_text=mode_label_text
-        )
-        mode_title.setStyleSheet(
-            "font-size: 24px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none; padding: 6px;"
-        )
+        mode_title = AccessibleLabel(visual_text=mode_label_text, accessible_text=mode_label_text)
+        mode_title.setStyleSheet("font-size: 24px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
         layout.addWidget(mode_title)
 
-        self.instructions_display = AccessibleBrowser(
-            text=instructions_text, accessible_text=instructions_text
-        )
+        self.instructions_display = AccessibleBrowser(text=instructions_text, accessible_text=instructions_text)
         self.instructions_display.setMinimumHeight(70)
         layout.addWidget(self.instructions_display)
 
-        # Stats row
         stats_layout = QHBoxLayout()
         self.xp_label = AccessibleLabel(visual_text=xp_text, accessible_text=xp_text)
         stats_layout.addWidget(self.xp_label)
-        self.timer_label = AccessibleLabel(
-            visual_text=timer_text, accessible_text=timer_text
-        )
+        self.timer_label = AccessibleLabel(visual_text=timer_text, accessible_text=timer_text)
         stats_layout.addWidget(self.timer_label)
         layout.addLayout(stats_layout)
 
-        # Target display  -  large character; AccessibleLabel so screen reader tracks it
-        self.target_display = AccessibleLabel(
-            visual_text="", accessible_text="Waiting for session to start"
-        )
-        self.target_display.setStyleSheet(
-            "font-size: 120px; color: #f9d342;"
-            "border: 3px solid #f9d342; border-radius: 10px;"
-            "background-color: #1a1a2e; padding: 8px;"
-            "min-height: 160px;"
-        )
+        self.target_display = AccessibleLabel(visual_text="", accessible_text="Waiting for session to start")
+        self.target_display.setStyleSheet("font-size: 120px; color: #f9d342; border: 3px solid #f9d342; border-radius: 10px; background-color: #1a1a2e; padding: 8px; min-height: 160px;")
         layout.addWidget(self.target_display)
 
-        # Typing input - ChallengeTypingInput handles Ctrl repeat + Shift+Enter exit
         self.input_field = ChallengeTypingInput(self)
         self.input_field.textChanged.connect(self._on_input_changed)
         layout.addWidget(self.input_field)
@@ -260,50 +232,36 @@ class GenericTypingMode(QWidget):
     def _setup_timers(self):
         self.session_timer = QTimer()
         self.session_timer.timeout.connect(self._update_session_timer)
-
         self.target_timer = QTimer()
         self.target_timer.setSingleShot(True)
         self.target_timer.timeout.connect(self._on_target_timeout)
-
         self.message_timer = QTimer()
         self.message_timer.setSingleShot(True)
         self.message_timer.timeout.connect(self._clear_message_display)
 
-    # ---- Session lifecycle ----
-
     def start_session(self):
-        """Call after show() to begin the timed session."""
         self.session_start_time = time.time()
-        self.correct_count   = 0
+        self.correct_count = 0
         self.incorrect_count = 0
-        self.timeout_count   = 0
-        self.session_xp      = 0.0
-        self.xp_earned       = 0.0
-
+        self.timeout_count = 0
+        self.session_xp = 0.0
+        self.xp_earned = 0.0
         self._init_warmup_csv()
         self.session_timer.start(1000)
         self._next_target()
-
         if self.base_logic.speaker:
-            msg = ("Warmup session started. Begin typing!"
-                   if self.is_english else
-                   "Session de réchauffement démarrée. Commencez à taper !")
+            msg = ("Warmup session started. Begin typing!" if self.is_english
+                   else "Session de réchauffement démarrée. Commencez à taper !")
             self.base_logic.speaker.output(msg)
-
-    # ---- CSV ----
 
     def _init_warmup_csv(self):
         clean_name = self.base_logic.get_clean_username()
         user_dir = os.path.join(self.base_logic.data_dir, clean_name)
         os.makedirs(user_dir, exist_ok=True)
-        self.warmup_csv_path = os.path.join(
-            user_dir, f"{clean_name}_Warmup_Session.csv"
-        )
+        self.warmup_csv_path = os.path.join(user_dir, f"{clean_name}_Warmup_Session.csv")
         try:
             with open(self.warmup_csv_path, 'w', newline='', encoding='utf-8') as f:
-                csv.writer(f).writerow(
-                    ["Timestamp", "Target", "Status", "Typing Time (s)"]
-                )
+                csv.writer(f).writerow(["Timestamp", "Target", "Status", "Typing Time (s)"])
         except Exception:
             pass
 
@@ -316,40 +274,28 @@ class GenericTypingMode(QWidget):
                     time.strftime("%Y-%m-%d %H:%M:%S"),
                     target,
                     status,
-                    round(typing_time, 3)
-                    if status == "correct" and typing_time is not None
-                    else "!",
+                    round(typing_time, 3) if status == "correct" and typing_time is not None else "!",
                 ])
         except Exception:
             pass
 
-    # ---- Target generation ----
-
     def get_random_target(self):
-        """
-        Warmup character pool - case-sensitive, like week 5.
-        Lowercase (most common), uppercase (less frequent, requires Shift),
-        symbols from the pronunciation dictionary (least frequent).
-        """
         lowercase = "abcdefghijklmnopqrstuvwxyz"
         uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        symbols   = "".join(symbol_pronounciation.keys())
-        # 15 lowercase : 5 uppercase : 3 symbols
+        symbols = "".join(symbol_pronounciation.keys())
         pool = lowercase * 15 + uppercase * 5 + symbols * 3
         return random.choice(pool)
 
     def _next_target(self):
         self.target_timer.stop()
-        self.current_target    = self.get_random_target()
+        self.current_target = self.get_random_target()
         self.target_start_time = time.time()
 
-        # Symbols/uppercase -> 3 s timeout; lowercase -> 2 s
         if self.current_target in symbol_pronounciation or self.current_target.isupper():
             self.target_timeout = 3.0
         else:
             self.target_timeout = 2.0
 
-        # Build announcement
         if self.current_target in symbol_pronounciation:
             announcement = symbol_pronounciation[self.current_target]
         elif self.current_target.isupper():
@@ -358,73 +304,59 @@ class GenericTypingMode(QWidget):
             announcement = self.current_target
 
         self.target_display.update_text(self.current_target, announcement)
-
         if self.base_logic.speaker:
             self.base_logic.speaker.output(announcement)
 
-        self.input_field.blockSignals(True)
+        self.input_field.textChanged.disconnect(self._on_input_changed)
         self.input_field.clear()
-        self.input_field.blockSignals(False)
+        self.input_field.textChanged.connect(self._on_input_changed)
         self.input_field.setFocus()
-
         self.target_timer.start(int(self.target_timeout * 1000))
-
-    # ---- Input handling ----
 
     def _on_input_changed(self, text):
         if not text:
             return
-
         typed = text[-1]
-
         if typed == self.current_target:
-            # Correct - exact case match required (like week 5)
             self.target_timer.stop()
             typing_time = time.time() - self.target_start_time
             winsound.Beep(1500, 100)
             self.correct_count += 1
-            self.session_xp    += 0.25
-            self.xp_earned     += 0.25
+            self.session_xp += 0.25
+            self.xp_earned += 0.25
             self._update_xp_display()
             self._log_attempt(self.current_target, "correct", typing_time)
             self._next_target()
-
         else:
-            # Incorrect - wrong key or wrong case; penalise and move on immediately
+            # Single character mismatch: treat as incorrect immediately
             self.target_timer.stop()
             winsound.Beep(400, 200)
             self.incorrect_count += 1
-            self.session_xp      -= 0.5
-            self.xp_earned       -= 0.5
+            self.session_xp -= 0.5
+            self.xp_earned -= 0.5
             self._update_xp_display()
             self._log_attempt(self.current_target, "incorrect")
-            self.input_field.blockSignals(True)
+            self.input_field.textChanged.disconnect(self._on_input_changed)
             self.input_field.clear()
-            self.input_field.blockSignals(False)
+            self.input_field.textChanged.connect(self._on_input_changed)
             self._next_target()
 
     def _on_target_timeout(self):
         winsound.Beep(600, 300)
         self.timeout_count += 1
-        self.session_xp    -= 1.0
-        self.xp_earned     -= 1.0
+        self.session_xp -= 1.0
+        self.xp_earned -= 1.0
         self._update_xp_display()
         self._log_attempt(self.current_target, "timeout")
         self._next_target()
 
-    # ---- Display helpers ----
-
     def _update_xp_display(self):
-        v = (f"XP Earned: {self.xp_earned:.2f}"
-             if self.is_english else
-             f"XP Gagné : {self.xp_earned:.2f}")
-        a = (f"{self.xp_earned:.2f} XP earned this session"
-             if self.is_english else
-             f"{self.xp_earned:.2f} XP gagnés cette session")
+        v = (f"XP Earned: {self.xp_earned:.2f}" if self.is_english else f"XP Gagné : {self.xp_earned:.2f}")
+        a = (f"{self.xp_earned:.2f} XP earned this session" if self.is_english else f"{self.xp_earned:.2f} XP gagnés cette session")
         self.xp_label.update_text(v, a)
 
     def _update_session_timer(self):
-        elapsed   = time.time() - self.session_start_time
+        elapsed = time.time() - self.session_start_time
         remaining = self.session_duration - elapsed
         if remaining <= 0:
             self._end_session()
@@ -432,58 +364,36 @@ class GenericTypingMode(QWidget):
         m = int(remaining) // 60
         s = int(remaining) % 60
         v = f"Time: {m}:{s:02d}" if self.is_english else f"Temps : {m}:{s:02d}"
-        a = (f"{m} minutes {s} seconds remaining"
-             if self.is_english else
-             f"{m} minutes {s} secondes restantes")
+        a = (f"{m} minutes {s} seconds remaining" if self.is_english else f"{m} minutes {s} secondes restantes")
         self.timer_label.update_text(v, a)
 
-    # ---- Temporary message overlay ----
-
     def show_temporary_message(self, message, duration=2000):
-        """Flash a message in the target area; typing continues in background."""
         self._original_target = self.current_target
         self.target_display.update_text(message, message)
-        self.target_display.setStyleSheet(
-            "font-size: 60px; color: #0fecb0;"
-            "border: 3px solid #0fecb0; border-radius: 10px;"
-            "background-color: #1a1a2e; padding: 8px; min-height: 160px;"
-        )
+        self.target_display.setStyleSheet("font-size: 60px; color: #0fecb0; border: 3px solid #0fecb0; border-radius: 10px; background-color: #1a1a2e; padding: 8px; min-height: 160px;")
         self.message_timer.start(duration)
 
     def _clear_message_display(self):
         t = self._original_target
         if t:
-            ann = symbol_pronounciation.get(
-                t,
-                f"{t.lower()} majuscule" if t.isupper() else t
-            )
+            ann = symbol_pronounciation.get(t, f"{t.lower()} majuscule" if t.isupper() else t)
             self.target_display.update_text(t, ann)
-        self.target_display.setStyleSheet(
-            "font-size: 120px; color: #f9d342;"
-            "border: 3px solid #f9d342; border-radius: 10px;"
-            "background-color: #1a1a2e; padding: 8px; min-height: 160px;"
-        )
-
-    # ---- Session end ----
+        self.target_display.setStyleSheet("font-size: 120px; color: #f9d342; border: 3px solid #f9d342; border-radius: 10px; background-color: #1a1a2e; padding: 8px; min-height: 160px;")
 
     def _end_session(self):
         self.session_timer.stop()
         self.target_timer.stop()
         self.message_timer.stop()
-
         total = self.correct_count + self.incorrect_count
         self.accuracy = (self.correct_count / total * 100) if total > 0 else 0.0
-
         self.session_xp += 30
-        self.xp_earned  += 30
-
+        self.xp_earned += 30
         accuracy_bonus = boss_damage_bonus = 0
         if self.accuracy >= 90:
-            accuracy_bonus    = 20
+            accuracy_bonus = 20
             boss_damage_bonus = 5
-            self.session_xp  += 20
-            self.xp_earned   += 20
-
+            self.session_xp += 20
+            self.xp_earned += 20
         self._update_challenge_state(accuracy_bonus, boss_damage_bonus)
         self._show_results_page()
 
@@ -494,11 +404,9 @@ class GenericTypingMode(QWidget):
         logic.add_xp(int(self.session_xp))
         if boss_damage_bonus > 0:
             logic.boss_health = max(0, logic.boss_health - boss_damage_bonus)
-        logic.modes["warmup"]["status"]    = "done"
+        logic.modes["warmup"]["status"] = "done"
         logic.modes["warmup"]["completed"] = True
-        logic.completed_modes_count = sum(
-            1 for v in logic.modes.values() if v["completed"]
-        )
+        logic.completed_modes_count = sum(1 for v in logic.modes.values() if v["completed"])
         for mk, data in logic.modes.items():
             if mk != "crazy_party" and not data["completed"]:
                 data["status"] = "unlocked"
@@ -507,74 +415,68 @@ class GenericTypingMode(QWidget):
 
     def _show_results_page(self):
         if self.is_english:
-            title          = "WARMUP COMPLETE"
-            correct_text   = f"Correct Answers: {self.correct_count}"
+            title = "WARMUP COMPLETE"
+            correct_text = f"Correct Answers: {self.correct_count}"
             incorrect_text = f"Incorrect Answers: {self.incorrect_count}"
-            timeout_text   = f"Timeouts: {self.timeout_count}"
-            accuracy_text  = f"Accuracy: {self.accuracy:.1f}%"
-            xp_text        = f"Total XP Earned: {int(self.xp_earned)}"
-            bonus_text     = (
-                "Accuracy Bonus: +20 XP  |  Boss Damage: -5%"
-                if self.accuracy >= 90 else
-                "Tip: reach 90%+ accuracy for a bonus!"
-            )
-            button_text    = "Return to Challenge Battle"
+            timeout_text = f"Timeouts: {self.timeout_count}"
+            accuracy_text = f"Accuracy: {self.accuracy:.1f}%"
+            xp_text = f"Total XP Earned: {int(self.xp_earned)}"
+            bonus_text = ("Accuracy Bonus: +20 XP  |  Boss Damage: -5%" if self.accuracy >= 90 else "Tip: reach 90%+ accuracy for a bonus!")
+            button_text = "Return to Challenge Battle"
         else:
-            title          = "ÉCHAUFFEMENT COMPLET"
-            correct_text   = f"Bonnes Réponses : {self.correct_count}"
+            title = "ECHauffEMENT COMPLET"
+            correct_text = f"Bonnes Réponses : {self.correct_count}"
             incorrect_text = f"Mauvaises Réponses : {self.incorrect_count}"
-            timeout_text   = f"Dépassements : {self.timeout_count}"
-            accuracy_text  = f"Précision : {self.accuracy:.1f}%"
-            xp_text        = f"XP Total Gagné : {int(self.xp_earned)}"
-            bonus_text     = (
-                "Bonus Précision : +20 XP  |  Dommage Boss : -5%"
-                if self.accuracy >= 90 else
-                "Conseil : atteignez 90%+ de précision pour un bonus !"
-            )
-            button_text    = "Retour au Combat de Défi"
+            timeout_text = f"Dépassements : {self.timeout_count}"
+            accuracy_text = f"Précision : {self.accuracy:.1f}%"
+            xp_text = f"XP Total Gagné : {int(self.xp_earned)}"
+            bonus_text = ("Bonus Précision : +20 XP  |  Dommage Boss : -5%" if self.accuracy >= 90 else "Conseil : atteignez 90%+ de précision pour un bonus !")
+            button_text = "Retour au Combat de Défi"
 
         dlg = QDialog(self)
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
-
         layout = QVBoxLayout()
-
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
-        title_label.setStyleSheet(
-            "font-size: 26px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none; padding: 6px;"
-        )
+        title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
         layout.addWidget(title_label)
-
-        stats_text = (
-            f"{correct_text}\n{incorrect_text}\n{timeout_text}\n"
-            f"{accuracy_text}\n\n{xp_text}\n{bonus_text}"
-        )
-        stats_browser = AccessibleBrowser(
-            text=stats_text, accessible_text=stats_text
-        )
+        stats_text = f"{correct_text}\n{incorrect_text}\n{timeout_text}\n{accuracy_text}\n\n{xp_text}\n{bonus_text}"
+        stats_browser = AccessibleBrowser(text=stats_text, accessible_text=stats_text)
         stats_browser.setMinimumHeight(220)
         layout.addWidget(stats_browser)
-
         btn_return = AccessiblePushButton(button_text)
         btn_return.clicked.connect(lambda: self._return_to_challenge(dlg))
         layout.addWidget(btn_return)
-
         dlg.setLayout(layout)
         dlg.exec_()
 
     def _return_to_challenge(self, dialog):
         dialog.accept()
         if self.parent_challenge:
-            self.parent_challenge.pages.setCurrentIndex(1)  # challenge battle = page 1
+            self.parent_challenge.pages.setCurrentIndex(1)
             self.parent_challenge.update_display()
         self.close()
 
-    # ---- Early exit ----
+    def _pause_timers(self):
+        if not self._announcement_paused:
+            self._announcement_paused = True
+            self.session_timer.stop()
+            self.target_timer.stop()
+
+    def _resume_timers(self):
+        if self._announcement_paused:
+            self._announcement_paused = False
+            if not self.session_timer.isActive() and self.session_start_time:
+                self.session_timer.start(1000)
+            if self.current_target and not self.target_timer.isActive():
+                self.target_timer.start(int(self.target_timeout * 1000))
+
+    def on_typing_key_pressed(self):
+        if self._announcement_paused:
+            self._resume_timers()
 
     def repeat_current_target(self):
-        """Ctrl: re-announce the current target."""
         if not self.current_target:
             return
         if self.current_target in symbol_pronounciation:
@@ -587,79 +489,132 @@ class GenericTypingMode(QWidget):
             self.base_logic.speaker.output(ann)
 
     def _on_shift_enter(self):
-        """Shift+Enter: exit confirmation with -50 XP warning."""
-        self.session_timer.stop()
-        self.target_timer.stop()
+        # Announce status and show exit dialog
+        self._pause_timers()
+        elapsed = time.time() - self.session_start_time
+        remaining = self.session_duration - elapsed
+        if remaining < 0:
+            remaining = 0
+        m = int(remaining) // 60
+        s = int(remaining) % 60
+        if self.is_english:
+            msg = f"XP earned: {self.xp_earned:.1f}. Time remaining: {m} minutes {s} seconds."
+        else:
+            msg = f"XP gagnés : {self.xp_earned:.1f}. Temps restant : {m} minutes {s} secondes."
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(msg)
+        # Show exit dialog after announcing
+        self._show_exit_dialog()
 
+    def _announce_status(self):
+        self._pause_timers()
+        elapsed = time.time() - self.session_start_time
+        remaining = self.session_duration - elapsed
+        if remaining < 0:
+            remaining = 0
+        m = int(remaining) // 60
+        s = int(remaining) % 60
+        if self.is_english:
+            msg = f"XP earned: {self.xp_earned:.1f}. Time remaining: {m} minutes {s} seconds."
+        else:
+            msg = f"XP gagnés : {self.xp_earned:.1f}. Temps restant : {m} minutes {s} secondes."
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(msg)
+        delay = len(msg) * 100 + 500
+        QTimer.singleShot(delay, self._resume_timers)
+
+    def _show_exit_dialog(self):
         dlg = QDialog(self)
         dlg.setWindowTitle("Exit?" if self.is_english else "Quitter ?")
         dlg.setMinimumWidth(480)
         dlg.setStyleSheet(self.styleSheet())
         layout = QVBoxLayout()
-
-        msg_text = (
-            "Exit this session?\n\nA 50 XP penalty will be applied."
-            if self.is_english else
-            "Quitter cette session ?\n\nUne penalite de 50 XP sera appliquee."
-        )
+        msg_text = ("Exit this session?\n\nA 50 XP penalty will be applied." if self.is_english
+                    else "Quitter cette session ?\n\nUne penalite de 50 XP sera appliquee.")
         msg = AccessibleBrowser(text=msg_text, accessible_text=msg_text)
         layout.addWidget(msg)
-
         btn_row = QHBoxLayout()
         btn_yes = AccessiblePushButton("Yes, exit" if self.is_english else "Oui, quitter")
-        btn_no  = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
+        btn_no = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
         btn_yes.clicked.connect(dlg.accept)
         btn_no.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_yes)
         btn_row.addWidget(btn_no)
         layout.addLayout(btn_row)
         dlg.setLayout(layout)
-
         if dlg.exec_() == QDialog.Accepted:
             self.leave_session()
         else:
-            self.session_timer.start(1000)
-            self.target_timer.start(int(self.target_timeout * 1000))
+            self._resume_timers()
 
     def leave_session(self):
         self.session_timer.stop()
         self.target_timer.stop()
         self.message_timer.stop()
-
         if self.warmup_csv_path and os.path.exists(self.warmup_csv_path):
             try:
                 os.remove(self.warmup_csv_path)
             except Exception:
                 pass
-
         if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
             logic = self.parent_challenge.logic
             logic.xp_balance = max(0, logic.xp_balance - 50)
             logic.save_progress()
             self.parent_challenge.update_display()
-
         if self.base_logic.speaker:
-            msg = ("Session exited. 50 XP penalty applied."
-                   if self.is_english else
-                   "Session quittée. Pénalité de 50 XP appliquée.")
+            msg = ("Session exited. 50 XP penalty applied." if self.is_english else "Session quittée. Pénalité de 50 XP appliquée.")
             self.base_logic.speaker.output(msg)
-
         if self.parent_challenge:
             self.parent_challenge.pages.setCurrentIndex(1)
         self.close()
 
     def closeEvent(self, event):
+        if not self.session_start_time or not self.session_timer.isActive():
+            event.accept()
+            return
         self.session_timer.stop()
         self.target_timer.stop()
         self.message_timer.stop()
-        event.accept()
+        self._show_exit_dialog()
+        event.ignore()
 
 
-# ============= COMBO MODE WELCOME PAGE =============
+# ============= COMBO MODE =============
+
+class ComboTypingInput(QLineEdit):
+    def __init__(self, mode, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mode = mode
+
+    def keyPressEvent(self, event):
+        # Ctrl alone: repeat target
+        if event.key() == Qt.Key_Control and event.modifiers() == Qt.ControlModifier:
+            if hasattr(self.mode, 'repeat_current_target'):
+                self.mode.repeat_current_target()
+            return
+
+        # Shift+Enter: exit confirmation
+        if (event.key() in (Qt.Key_Return, Qt.Key_Enter)
+                and event.modifiers() & Qt.ShiftModifier):
+            if hasattr(self.mode, '_on_shift_enter'):
+                self.mode._on_shift_enter()
+            return
+
+        # Shift+Ctrl: announce status
+        if (event.key() == Qt.Key_Control
+                and event.modifiers() & Qt.ShiftModifier):
+            if hasattr(self.mode, '_announce_status'):
+                self.mode._announce_status()
+            return
+
+        # Any other key: interrupt TTS
+        if hasattr(self.mode, 'on_typing_key_pressed'):
+            self.mode.on_typing_key_pressed()
+
+        super().keyPressEvent(event)
+
 
 class ComboWelcomePage(QWidget):
-    """Welcome screen explaining Combo Mode mechanics before the challenge begins."""
-
     def __init__(self, parent, is_english=True):
         super().__init__()
         self.parent_challenge = parent
@@ -668,26 +623,27 @@ class ComboWelcomePage(QWidget):
 
     def _setup_ui(self):
         layout = QVBoxLayout()
-
         if self.is_english:
-            title_text = "COMBO RUSH  -  Stage-Based Multiplier Challenge"
+            title_text = "COMBO RUSH - Stage-Based Multiplier Challenge"
             welcome_text = "Welcome to Combo Mode"
             instructions = (
                 "Build your combo score through precision and survive increasing complexity!\n\n"
                 "SCORING MECHANICS:\n"
                 "- Correct answer: Doubles your current combo score\n"
-                "- Incorrect answer: Divides your score by 3 (rounded to 2 decimals)\n"
-                "- Timeout: Resets score back to 1\n"
-                "- Cap at 128: When your score reaches 128, it auto-converts to XP and resets to 1\n\n"
+                "- Incorrect answer: Divides your score by 3\n"
+                "- Timeout: Resets score back to 0.1\n"
+                "- Cap at 128: When your score reaches 128, it auto-converts to XP and resets to 0.1\n\n"
                 "STAGE PROGRESSION:\n"
                 "• Stage 1 (5 min): Single characters\n"
                 "• Stage 2 (5 min): Two-character combos\n"
                 "• Stage 3 (5 min): Three-character combos\n"
                 "• Optional: Continue infinitely with longer combos for bonus rewards\n\n"
                 "XP CONVERSION:\n"
-                "After each correct answer, your combo score is converted to XP based on stage difficulty, "
-                "then resets to 1.\n"
-                "Stage 1: 0.1 XP per point | Stage 2: 0.2 XP per point | Stage 3: 0.4 XP per point\n\n"
+                "After each correct answer, your combo score is converted to XP based on stage difficulty. "
+                "Each stage increases conversion by 0.05 XP per point.\n"
+                "Stage 1: 0.05 XP per point | Stage 2: 0.1 XP per point | Stage 3: 0.15 XP per point\n\n"
+                "KEYBOARD SHORTCUTS:\n"
+                "Ctrl: Repeat target | Shift+Ctrl: Status | Shift+Enter: Exit\n\n"
                 "COMPLETION:\n"
                 "Complete Stage 3 with ≥70% accuracy to succeed and damage the boss.\n"
                 "Below 70%: Retry later. At or above 70%: +40 XP and -15% boss health!"
@@ -695,24 +651,26 @@ class ComboWelcomePage(QWidget):
             ready_text = "I Am Ready"
             notyet_text = "Not Yet"
         else:
-            title_text = "COMBO RUSH  -  Défi de Multiplicateur par Étape"
+            title_text = "COMBO RUSH - Défi de Multiplicateur par Étape"
             welcome_text = "Bienvenue au Mode Combo"
             instructions = (
                 "Construisez votre score de combo par la précision et survivez à la complexité croissante !\n\n"
                 "MÉCANIQUE DE NOTATION :\n"
                 "- Bonne réponse : Double votre score de combo actuel\n"
-                "- Mauvaise réponse : Divise votre score par 3 (arrondi à 2 décimales)\n"
-                "- Dépassement : Réinitialise le score à 1\n"
-                "- Plafond à 128 : Quand votre score atteint 128, il est automatiquement converti en XP et réinitialisé à 1\n\n"
+                "- Mauvaise réponse : Divise votre score par 3\n"
+                "- Dépassement : Réinitialise le score à 0,1\n"
+                "- Plafond à 128 : Quand votre score atteint 128, il est automatiquement converti en XP et réinitialisé à 0,1\n\n"
                 "PROGRESSION PAR ÉTAPE :\n"
                 "• Étape 1 (5 min) : Caractères uniques\n"
                 "• Étape 2 (5 min) : Combos de deux caractères\n"
                 "• Étape 3 (5 min) : Combos de trois caractères\n"
                 "• Optionnel : Continuer indéfiniment avec des combos plus longs pour des récompenses bonus\n\n"
                 "CONVERSION XP :\n"
-                "Après chaque bonne réponse, votre score de combo est converti en XP selon la difficulté de l'étape, "
-                "puis réinitialisé à 1.\n"
-                "Étape 1 : 0,1 XP par point | Étape 2 : 0,2 XP par point | Étape 3 : 0,4 XP par point\n\n"
+                "Après chaque bonne réponse, votre score de combo est converti en XP selon la difficulté de l'étape. "
+                "Chaque étape augmente la conversion de 0,05 XP par point.\n"
+                "Étape 1 : 0,05 XP par point | Étape 2 : 0,1 XP par point | Étape 3 : 0,15 XP par point\n\n"
+                "RACCOURCIS CLAVIER :\n"
+                "Ctrl : Répéter la cible | Maj+Ctrl : Statut | Maj+Entrée : Quitter\n\n"
                 "ACHÈVEMENT :\n"
                 "Terminez l'étape 3 avec ≥70 % de précision pour réussir et endommager le boss.\n"
                 "Moins de 70 % : Réessayez plus tard. 70 % ou plus : +40 XP et -15 % de santé du boss !"
@@ -721,32 +679,21 @@ class ComboWelcomePage(QWidget):
             notyet_text = "Pas encore"
 
         title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
-        title.setStyleSheet(
-            "font-size: 26px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none; padding: 8px;"
-        )
+        title.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 8px;")
         layout.addWidget(title)
-
         welcome = AccessibleLabel(visual_text=welcome_text, accessible_text=welcome_text)
-        welcome.setStyleSheet(
-            "font-size: 18px; font-weight: bold; color: #e94560;"
-            "background-color: transparent; border: none; padding: 4px;"
-        )
+        welcome.setStyleSheet("font-size: 18px; font-weight: bold; color: #e94560; background-color: transparent; border: none; padding: 4px;")
         layout.addWidget(welcome)
-
         inst_field = AccessibleBrowser(text=instructions, accessible_text=instructions)
         inst_field.setMinimumHeight(300)
         layout.addWidget(inst_field)
-
         btn_layout = QHBoxLayout()
         btn_ready = AccessiblePushButton(ready_text)
         btn_ready.clicked.connect(self._launch)
         btn_layout.addWidget(btn_ready)
-
         btn_notyet = AccessiblePushButton(notyet_text)
         btn_notyet.clicked.connect(self.close)
         btn_layout.addWidget(btn_notyet)
-
         layout.addLayout(btn_layout)
         layout.addStretch()
         self.setLayout(layout)
@@ -756,182 +703,108 @@ class ComboWelcomePage(QWidget):
             self.parent_challenge.launch_combo_session()
         self.close()
 
-# ============= COMBO MODE TYPING SESSION =============
 
 class ComboTypingMode(GenericTypingMode):
-    """
-    Multi-stage Combo Mode with progression-based infinite challenge.
-    Extends GenericTypingMode with stage progression, combo scoring, and XP conversion.
-    """
-
     def __init__(self, base_logic, is_english=True, parent=None):
-        # Initialize parent but override session_duration
-        super().__init__(
-            base_logic,
-            mode_name="Combo Rush",
-            is_english=is_english,
-            parent=parent
-        )
-        
-        # Override for Combo Mode
-        self.session_duration = 999999  # Controlled by stage transitions instead
-        
-        # Combo-specific state
+        super().__init__(base_logic, mode_name="Combo Rush", is_english=is_english, parent=parent)
+        self.session_duration = 999999
         self.current_stage = 1
         self.stage_start_time = None
-        self.stage_duration = 300  # 5 minutes per stage
-        self.combo_score = 1.0
-        self.highest_combo = 1.0
-        self.xp_conversion_rates = {1: 0.1, 2: 0.2, 3: 0.4}  # Stage -> multiplier
+        self.stage_duration = 300
+        self.combo_score = 0.1
+        self.highest_combo = 0.1
         self.total_session_xp = 0.0
         self.session_complete = False
         self.continue_challenge = False
         self.combo_csv_path = None
         self.session_accuracy = 0.0
         self.failed_mode = False
-        
-    def _setup_ui(self):
-        """Override parent UI to include combo-specific indicators."""
-        layout = QVBoxLayout()
+        self._tts_waiting = False
 
+    def _setup_ui(self):
+        layout = QVBoxLayout()
         if self.is_english:
-            mode_label_text = "COMBO RUSH  -  Stage-Based Progression"
-            instructions_text = (
-                "Type the combo as it appears. Build your streak and maximize score!\n"
-                "Correct: 2x score | Incorrect: ÷3 | Timeout: Reset to 1"
-            )
+            mode_label_text = "COMBO RUSH - Stage-Based Progression"
+            instructions_text = "Type the combo as it appears. Build your streak and maximize score!\nCorrect: 2x score | Incorrect: ÷3 | Timeout: Reset to 0.1"
             xp_text = "XP Balance: 0"
             stage_text = "Stage: 1 - Single Character"
-            score_text = "Combo Score: 1.0"
+            score_text = "Combo Score: 0.1"
             timer_text = "Stage Time: 5:00"
             button_text = "Leave and Go Back to Challenge Battle"
         else:
-            mode_label_text = "COMBO RUSH  -  Progression par Étape"
-            instructions_text = (
-                "Tapez le combo au fur et à mesure. Construisez votre série et maximisez le score !\n"
-                "Correct : 2x score | Incorrect : ÷3 | Dépassement : Réinitialiser à 1"
-            )
+            mode_label_text = "COMBO RUSH - Progression par Étape"
+            instructions_text = "Tapez le combo au fur et à mesure. Construisez votre série et maximisez le score !\nCorrect : 2x score | Incorrect : ÷3 | Dépassement : Réinitialiser à 0,1"
             xp_text = "Solde XP : 0"
             stage_text = "Etape : 1 - Caractere Unique"
-            score_text = "Score Combo : 1.0"
+            score_text = "Score Combo : 0.1"
             timer_text = "Temps d'Étape : 5:00"
             button_text = "Quitter et Retourner au Combat de Défi"
 
-        mode_title = AccessibleLabel(
-            visual_text=mode_label_text, accessible_text=mode_label_text
-        )
-        mode_title.setStyleSheet(
-            "font-size: 24px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none; padding: 6px;"
-        )
+        mode_title = AccessibleLabel(visual_text=mode_label_text, accessible_text=mode_label_text)
+        mode_title.setStyleSheet("font-size: 24px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
         layout.addWidget(mode_title)
-
-        self.instructions_display = AccessibleBrowser(
-            text=instructions_text, accessible_text=instructions_text
-        )
+        self.instructions_display = AccessibleBrowser(text=instructions_text, accessible_text=instructions_text)
         self.instructions_display.setMinimumHeight(70)
         layout.addWidget(self.instructions_display)
 
-        # Stats row 1: XP and Stage
         stats_layout1 = QHBoxLayout()
         self.xp_label = AccessibleLabel(visual_text=xp_text, accessible_text=xp_text)
         stats_layout1.addWidget(self.xp_label)
-        
-        self.stage_label = AccessibleLabel(
-            visual_text=stage_text, 
-            accessible_text=stage_text
-        )
+        self.stage_label = AccessibleLabel(visual_text=stage_text, accessible_text=stage_text)
         stats_layout1.addWidget(self.stage_label)
         layout.addLayout(stats_layout1)
 
-        # Stats row 2: Combo score and timer
         stats_layout2 = QHBoxLayout()
-        self.combo_score_label = AccessibleLabel(
-            visual_text=score_text,
-            accessible_text=score_text
-        )
+        self.combo_score_label = AccessibleLabel(visual_text=score_text, accessible_text=score_text)
         stats_layout2.addWidget(self.combo_score_label)
-        
-        self.timer_label = AccessibleLabel(
-            visual_text=timer_text, accessible_text=timer_text
-        )
+        self.timer_label = AccessibleLabel(visual_text=timer_text, accessible_text=timer_text)
         stats_layout2.addWidget(self.timer_label)
         layout.addLayout(stats_layout2)
 
-        # Target display - large combo text
-        self.target_display = AccessibleLabel(
-            visual_text="", accessible_text="Waiting for stage to start"
-        )
-        self.target_display.setStyleSheet(
-            "font-size: 100px; color: #f9d342;"
-            "border: 3px solid #f9d342; border-radius: 10px;"
-            "background-color: #1a1a2e; padding: 8px;"
-            "min-height: 160px;"
-        )
+        self.target_display = AccessibleLabel(visual_text="", accessible_text="Waiting for stage to start")
+        self.target_display.setStyleSheet("font-size: 100px; color: #f9d342; border: 3px solid #f9d342; border-radius: 10px; background-color: #1a1a2e; padding: 8px; min-height: 160px;")
         layout.addWidget(self.target_display)
 
-        # Typing input
-        self.input_field = ChallengeTypingInput(self)
+        self.input_field = ComboTypingInput(self)
         self.input_field.textChanged.connect(self._on_input_changed)
         layout.addWidget(self.input_field)
 
         btn_leave = AccessiblePushButton(button_text)
         btn_leave.clicked.connect(self.leave_session)
         layout.addWidget(btn_leave)
-
         self.setLayout(layout)
 
     def start_session(self):
-        """Start the Combo Mode challenge with Stage 1."""
         self.session_start_time = time.time()
         self.stage_start_time = time.time()
         self.current_stage = 1
-        self.combo_score = 1.0
-        self.highest_combo = 1.0
+        self.combo_score = 0.1
+        self.highest_combo = 0.1
         self.total_session_xp = 0.0
         self.correct_count = 0
         self.incorrect_count = 0
         self.timeout_count = 0
         self.session_accuracy = 0.0
-
         self._init_combo_csv()
         self.session_timer.start(1000)
         self._next_target()
-
         if self.base_logic.speaker:
-            msg = (
-                f"Combo Mode started. Stage 1 begins. Type the character as it appears!"
-                if self.is_english else
-                f"Mode Combo lancé. L'étape 1 commence. Tapez le caractère au fur et à mesure !"
-            )
+            msg = (f"Combo Mode started. Stage 1 begins. Type the character as it appears!" if self.is_english
+                   else f"Mode Combo lancé. L'étape 1 commence. Tapez le caractère au fur et à mesure !")
             self.base_logic.speaker.output(msg)
 
     def _init_combo_csv(self):
-        """Initialize CSV for detailed combo session logging."""
         clean_name = self.base_logic.get_clean_username()
         user_dir = os.path.join(self.base_logic.data_dir, clean_name)
         os.makedirs(user_dir, exist_ok=True)
-        self.combo_csv_path = os.path.join(
-            user_dir, f"{clean_name}_Combo_Session_{int(time.time())}.csv"
-        )
+        self.combo_csv_path = os.path.join(user_dir, f"{clean_name}_Combo_Session_{int(time.time())}.csv")
         try:
             with open(self.combo_csv_path, 'w', newline='', encoding='utf-8') as f:
-                csv.writer(f).writerow([
-                    "Timestamp", "Generated Combo", "Result Status", "Response Time (s)",
-                    "Stage", "Current Combo Score"
-                ])
+                csv.writer(f).writerow(["Timestamp", "Generated Combo", "Result Status", "Response Time (s)", "Stage", "Current Combo Score"])
         except Exception:
             pass
 
     def _log_combo_attempt(self, combo, status, response_time, score_after_action):
-        """Log a combo attempt to CSV.
-        
-        Args:
-            combo: The generated combo string
-            status: "correct", "incorrect", or "timeout"
-            response_time: Time taken (only for correct attempts)
-            score_after_action: Combo score AFTER this action is applied
-        """
         if not self.combo_csv_path:
             return
         try:
@@ -948,61 +821,45 @@ class ComboTypingMode(GenericTypingMode):
             pass
 
     def get_random_target(self):
-        """Override parent to generate combos based on current stage."""
         lowercase = "abcdefghijklmnopqrstuvwxyz"
         uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         symbols = "".join(symbol_pronounciation.keys())
         char_pool = lowercase + uppercase + symbols
-
-        combo_length = min(self.current_stage, 10)  # Stage 1=1, Stage 2=2, etc, max 10 chars
-        combo = "".join(random.choice(char_pool) for _ in range(combo_length))
-        return combo
+        combo_length = min(self.current_stage, 10)
+        return "".join(random.choice(char_pool) for _ in range(combo_length))
 
     def _next_target(self):
-        """Generate next combo and set up timeout."""
         self.target_timer.stop()
+        self._tts_waiting = False
         self.current_target = self.get_random_target()
         self.target_start_time = time.time()
-
-        # Constant 3-second timeout for all combos
         self.target_timeout = 3.0
-
         announcement = self._get_combo_announcement(self.current_target)
         self.target_display.update_text(self.current_target, announcement)
-
-        self.input_field.blockSignals(True)
+        self.input_field.textChanged.disconnect(self._on_input_changed)
         self.input_field.clear()
-        self.input_field.blockSignals(False)
-
+        self.input_field.textChanged.connect(self._on_input_changed)
         if self.current_stage == 1:
-            # Single char: announce and enable input immediately
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(announcement)
             self.input_field.setEnabled(True)
             self.input_field.setFocus()
             self.target_timer.start(int(self.target_timeout * 1000))
         else:
-            # Multi-char: disable input during announcement so screen reader
-            # is not interrupted by focus shift. Enable with beep after delay,
-            # matching standard word practice behaviour in existing weeks.
             self.input_field.setEnabled(False)
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(announcement)
-            # Delay: roughly 60ms per character of announcement text + 400ms buffer
             delay = len(announcement) * 60 + 400
             QTimer.singleShot(delay, self._enable_combo_input)
 
     def _enable_combo_input(self):
-        """Called after announcement delay for stages 2+. Mirrors start_counting()."""
         winsound.Beep(1000, 150)
         self.input_field.setEnabled(True)
         self.input_field.setFocus()
-        # Reset target timing to now so timeout is measured from when user can actually type
         self.target_start_time = time.time()
         self.target_timer.start(int(self.target_timeout * 1000))
 
     def _get_combo_announcement(self, combo):
-        """Convert combo string to screen reader announcement."""
         parts = []
         for char in combo:
             if char in symbol_pronounciation:
@@ -1014,107 +871,79 @@ class ComboTypingMode(GenericTypingMode):
         return ", ".join(parts)
 
     def _on_input_changed(self, text):
-        """Handle typing input - check for combo match."""
         if not text:
             return
-
         typed = text.strip()
-
+        # Exactly matched
         if typed == self.current_target:
-            # Correct - exact match
             self.target_timer.stop()
             typing_time = time.time() - self.target_start_time
-            
             winsound.Beep(1500, 100)
             self.correct_count += 1
-            
-            # Double the combo score, rounded to 2dp to avoid float drift
             self.combo_score = round(self.combo_score * 2, 2)
-            
-            # Cap at 128 - auto-convert integer part to XP and reset to 1
             if self.combo_score >= 128:
                 multiplier = self.get_xp_multiplier(self.current_stage)
                 xp_gained = round(int(self.combo_score) * multiplier, 1)
                 self.total_session_xp += xp_gained
                 self.xp_earned = self.total_session_xp
-                self.combo_score = 1.0
+                self.combo_score = 0.1
                 if self.base_logic.speaker:
-                    msg = (
-                        f"Combo cap! {xp_gained} XP converted."
-                        if self.is_english else
-                        f"Plafond combo ! {xp_gained} XP convertis."
-                    )
+                    msg = (f"Combo cap! {xp_gained} XP converted." if self.is_english else f"Plafond combo ! {xp_gained} XP convertis.")
                     self.base_logic.speaker.output(msg)
-            
-            # Track highest combo reached
             if self.combo_score > self.highest_combo:
                 self.highest_combo = self.combo_score
-            
-            # Log attempt with current score after doubling
             self._log_combo_attempt(self.current_target, "correct", typing_time, self.combo_score)
-            
             self._update_displays()
             self._next_target()
-
-        elif len(text) > len(self.current_target):
-            # User typed more characters than the target - mark as incorrect
+        # Mismatch when length equals target length (single char or full combo)
+        elif len(text) == len(self.current_target) and typed != self.current_target:
             self.target_timer.stop()
             winsound.Beep(400, 200)
             self.incorrect_count += 1
-            
-            # Divide score by 3, rounded to 2dp to prevent infinite float expansion
-            self.combo_score = round(self.combo_score / 3.0, 2)
-            # Minimum floor of 0.01 so score never reaches exactly zero
-            if self.combo_score < 0.01:
-                self.combo_score = 0.01
-            
-            # Log attempt with current score after division
+            self.combo_score = max(0.1, round(self.combo_score / 3.0, 2))
             self._log_combo_attempt(self.current_target, "incorrect", None, self.combo_score)
-            
             self._update_displays()
-            self.input_field.blockSignals(True)
+            self.input_field.textChanged.disconnect(self._on_input_changed)
             self.input_field.clear()
-            self.input_field.blockSignals(False)
+            self.input_field.textChanged.connect(self._on_input_changed)
             self._next_target()
+        # Too many characters typed (only relevant for multi-char, but also catches over-typing)
+        elif len(text) > len(self.current_target):
+            self.target_timer.stop()
+            winsound.Beep(400, 200)
+            self.incorrect_count += 1
+            self.combo_score = max(0.1, round(self.combo_score / 3.0, 2))
+            self._log_combo_attempt(self.current_target, "incorrect", None, self.combo_score)
+            self._update_displays()
+            self.input_field.textChanged.disconnect(self._on_input_changed)
+            self.input_field.clear()
+            self.input_field.textChanged.connect(self._on_input_changed)
+            self._next_target()
+        # Else (prefix match) do nothing, allow typing
 
     def _on_target_timeout(self):
-        """Handle timeout - reset score to 1."""
         winsound.Beep(600, 300)
         self.timeout_count += 1
-        
-        # Reset score to 1 on timeout
-        self.combo_score = 1.0
-        
+        self.combo_score = 0.1
         self._log_combo_attempt(self.current_target, "timeout", None, self.combo_score)
-        
         self._update_displays()
         self._next_target()
 
     def _update_session_timer(self):
-        """Update timers and check for stage transitions."""
-        # Calculate stage elapsed time
         stage_elapsed = time.time() - self.stage_start_time
         stage_remaining = self.stage_duration - stage_elapsed
-
         if stage_remaining <= 0:
-            # Stage complete - convert XP and transition to next stage
             self._convert_stage_xp()
             self._transition_stage()
             return
-
         m = int(stage_remaining) // 60
         s = int(stage_remaining) % 60
         v = f"Stage Time: {m}:{s:02d}" if self.is_english else f"Temps d'Étape : {m}:{s:02d}"
-        a = (f"{m} minutes {s} seconds remaining in this stage"
-             if self.is_english else
-             f"{m} minutes {s} secondes restantes dans cette étape")
+        a = (f"{m} minutes {s} seconds remaining in this stage" if self.is_english
+             else f"{m} minutes {s} secondes restantes dans cette étape")
         self.timer_label.update_text(v, a)
 
     def _convert_stage_xp(self):
-        """Convert current combo score to XP at end of stage.
-        Only the integer part of the score is used - fractional points
-        below 1 are ignored to keep XP clean to 1 decimal place.
-        """
         multiplier = self.get_xp_multiplier(self.current_stage)
         xp_gained = round(int(self.combo_score) * multiplier, 1)
         self.total_session_xp += xp_gained
@@ -1122,64 +951,44 @@ class ComboTypingMode(GenericTypingMode):
         self._update_displays()
 
     def _transition_stage(self):
-        """Move to the next stage or handle stage completion."""
         if self.current_stage < 3:
-            # Transition from mandatory stages (1->2, 2->3)
             self.current_stage += 1
             self.stage_start_time = time.time()
-            self.combo_score = 1.0  # Reset score for new stage
-            
+            self.combo_score = 0.1
             stage_names = {
-                1: ("Stage 1 - Single Character",      "Etape 1 - Caractere Unique"),
-                2: ("Stage 2 - Two Character Combos",   "Etape 2 - Combos de Deux Caracteres"),
+                1: ("Stage 1 - Single Character", "Etape 1 - Caractere Unique"),
+                2: ("Stage 2 - Two Character Combos", "Etape 2 - Combos de Deux Caracteres"),
                 3: ("Stage 3 - Three Character Combos", "Etape 3 - Combos de Trois Caracteres"),
             }
             eng_name, fr_name = stage_names[self.current_stage]
             display_text = eng_name if self.is_english else fr_name
-            
             self.stage_label.update_text(display_text, display_text)
-            
             if self.base_logic.speaker:
-                self.base_logic.speaker.output(
-                    f"Stage {self.current_stage} started!" if self.is_english
-                    else f"L'étape {self.current_stage} a commencé !"
-                )
-            
+                self.base_logic.speaker.output(f"Stage {self.current_stage} started!" if self.is_english else f"L'étape {self.current_stage} a commencé !")
             self._next_target()
         elif self.current_stage == 3:
-            # Stage 3 complete - check accuracy
             self._complete_mandatory_stages()
         else:
-            # Bonus stage (4+) complete - offer to continue or exit
             self._complete_bonus_stage()
 
     def _complete_mandatory_stages(self):
-        """Handle completion of mandatory Stage 3."""
         self.session_timer.stop()
         self.target_timer.stop()
         self.message_timer.stop()
-
         total = self.correct_count + self.incorrect_count
         self.session_accuracy = (self.correct_count / total * 100) if total > 0 else 0.0
-
         if self.session_accuracy < 70:
             self.failed_mode = True
             self._show_failure_page()
         else:
-            # Mandatory stages passed - can continue or exit
             self._show_stage3_complete_page()
 
     def _complete_bonus_stage(self):
-        """Handle completion of a bonus stage (Stage 4+)."""
         self.session_timer.stop()
         self.target_timer.stop()
         self.message_timer.stop()
-
-        # Calculate accuracy for this entire session
         total = self.correct_count + self.incorrect_count
         self.session_accuracy = (self.correct_count / total * 100) if total > 0 else 0.0
-
-        # Show bonus stage completion with option to continue
         if self.is_english:
             title = f"STAGE {self.current_stage} COMPLETE"
             stats_text = (
@@ -1207,131 +1016,83 @@ class ComboTypingMode(GenericTypingMode):
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
-
         layout = QVBoxLayout()
-
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
-        title_label.setStyleSheet(
-            "font-size: 26px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none; padding: 6px;"
-        )
+        title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
         layout.addWidget(title_label)
-
         stats_browser = AccessibleBrowser(text=stats_text, accessible_text=stats_text)
         stats_browser.setMinimumHeight(220)
         layout.addWidget(stats_browser)
-
         btn_layout = QHBoxLayout()
-
         btn_continue = AccessiblePushButton(btn_continue_text)
         btn_continue.clicked.connect(self._continue_to_next_bonus_stage)
         btn_layout.addWidget(btn_continue)
-
         btn_return = AccessiblePushButton(btn_return_text)
         btn_return.clicked.connect(lambda: self._exit_bonus_stages(dlg))
         btn_layout.addWidget(btn_return)
-
         layout.addLayout(btn_layout)
         dlg.setLayout(layout)
         dlg.exec_()
 
     def _continue_to_next_bonus_stage(self):
-        """Continue from current bonus stage to the next one."""
-        # Apply bonus stage rewards
         if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
             logic = self.parent_challenge.logic
             logic.add_xp(20)
             logic.boss_health = max(0, logic.boss_health - 5)
-
-        # Move to next bonus stage
-        self.combo_score = 1.0  # Reset for new stage
+        self.combo_score = 0.1
         self.current_stage += 1
-        self.highest_combo = 1.0  # Reset highest for new stage
+        self.highest_combo = 0.1
         self.stage_start_time = time.time()
-        
         stage_names = {
-            4: ("Stage 4 - Four Character Combos",  "Etape 4 - Combos de Quatre Caracteres"),
-            5: ("Stage 5 - Five Character Combos",   "Etape 5 - Combos de Cinq Caracteres"),
+            4: ("Stage 4 - Four Character Combos", "Etape 4 - Combos de Quatre Caracteres"),
+            5: ("Stage 5 - Five Character Combos", "Etape 5 - Combos de Cinq Caracteres"),
         }
-        eng_name, fr_name = stage_names.get(
-            self.current_stage,
-            (f"Stage {self.current_stage} - Bonus Challenge",
-             f"Etape {self.current_stage} - Defi Bonus")
-        )
+        eng_name, fr_name = stage_names.get(self.current_stage, (f"Stage {self.current_stage} - Bonus Challenge", f"Etape {self.current_stage} - Defi Bonus"))
         display_text = eng_name if self.is_english else fr_name
-        
         self.stage_label.update_text(display_text, display_text)
-        
         if self.base_logic.speaker:
-            self.base_logic.speaker.output(
-                f"Bonus Stage {self.current_stage} started!" if self.is_english
-                else f"L'étape bonus {self.current_stage} a commencé !"
-            )
-        
+            self.base_logic.speaker.output(f"Bonus Stage {self.current_stage} started!" if self.is_english else f"L'étape bonus {self.current_stage} a commencé !")
         self.session_timer.start(1000)
         self._next_target()
 
     def _exit_bonus_stages(self, dialog):
-        """Exit from bonus stages and return to battle."""
         dialog.accept()
-        
-        # Apply final bonus stage rewards before exiting
         if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
             logic = self.parent_challenge.logic
             logic.add_xp(20)
             logic.boss_health = max(0, logic.boss_health - 5)
             logic.save_progress()
             self.parent_challenge.update_display()
-        
-        # Show final results and return
         self._show_final_results_page()
 
     def _show_failure_page(self):
-        """Show failure screen when accuracy < 70%."""
         if self.is_english:
             title = "ACCURACY TOO LOW"
-            message = (
-                f"Final Accuracy: {self.session_accuracy:.1f}%\n\n"
-                f"You need at least 70% accuracy to complete Combo Mode.\n"
-                f"Please try again later!"
-            )
+            message = f"Final Accuracy: {self.session_accuracy:.1f}%\n\nYou need at least 70% accuracy to complete Combo Mode.\nPlease try again later!"
             button_text = "Return to Challenge Battle"
         else:
             title = "PRÉCISION INSUFFISANTE"
-            message = (
-                f"Précision Finale : {self.session_accuracy:.1f} %\n\n"
-                f"Vous avez besoin d'au moins 70 % de précision pour terminer le Mode Combo.\n"
-                f"Veuillez réessayer plus tard !"
-            )
+            message = f"Précision Finale : {self.session_accuracy:.1f} %\n\nVous avez besoin d'au moins 70 % de précision pour terminer le Mode Combo.\nVeuillez réessayer plus tard !"
             button_text = "Retour au Combat de Défi"
 
         dlg = QDialog(self)
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
-
         layout = QVBoxLayout()
-
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
-        title_label.setStyleSheet(
-            "font-size: 26px; font-weight: bold; color: #e94560;"
-            "background-color: transparent; border: none; padding: 6px;"
-        )
+        title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #e94560; background-color: transparent; border: none; padding: 6px;")
         layout.addWidget(title_label)
-
         msg_browser = AccessibleBrowser(text=message, accessible_text=message)
         msg_browser.setMinimumHeight(180)
         layout.addWidget(msg_browser)
-
         btn_return = AccessiblePushButton(button_text)
         btn_return.clicked.connect(lambda: self._return_to_challenge(dlg))
         layout.addWidget(btn_return)
-
         dlg.setLayout(layout)
         dlg.exec_()
 
     def _show_stage3_complete_page(self):
-        """Show completion screen with option to continue or return."""
         if self.is_english:
             title = "STAGE 3 COMPLETE"
             stats_text = (
@@ -1365,97 +1126,58 @@ class ComboTypingMode(GenericTypingMode):
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
-
         layout = QVBoxLayout()
-
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
-        title_label.setStyleSheet(
-            "font-size: 26px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none; padding: 6px;"
-        )
+        title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
         layout.addWidget(title_label)
-
         stats_browser = AccessibleBrowser(text=stats_text, accessible_text=stats_text)
         stats_browser.setMinimumHeight(260)
         layout.addWidget(stats_browser)
-
         btn_layout = QHBoxLayout()
-
         btn_continue = AccessiblePushButton(btn_continue_text)
         btn_continue.clicked.connect(self._continue_to_next_bonus_stage)
         btn_layout.addWidget(btn_continue)
-
         btn_return = AccessiblePushButton(btn_return_text)
         btn_return.clicked.connect(lambda: self._end_session_and_return(dlg))
         btn_layout.addWidget(btn_return)
-
         layout.addLayout(btn_layout)
         dlg.setLayout(layout)
         dlg.exec_()
 
-
     def _end_session_and_return(self, dialog):
-        """End the session after Stage 3 completion (success) and return to battle."""
         dialog.accept()
-        
-        # Final XP conversion from the completed stage
         self._convert_stage_xp()
-        
-        # Update challenge state with success rewards
         self._update_challenge_state_success()
         self._show_final_results_page()
 
     def _update_displays(self):
-        """Update all display labels."""
-        # XP label
         v = f"XP Balance: {int(self.xp_earned)}" if self.is_english else f"Solde XP : {int(self.xp_earned)}"
         a = f"{int(self.xp_earned)} XP earned" if self.is_english else f"{int(self.xp_earned)} XP gagnés"
         self.xp_label.update_text(v, a)
-
-        # Combo score label
-        v = f"Combo Score: {self.combo_score:.1f}" if self.is_english else f"Score Combo : {self.combo_score:.1f}"
-        a = f"Current combo score is {self.combo_score:.1f}" if self.is_english else f"Le score de combo actuel est {self.combo_score:.1f}"
+        v = f"Combo Score: {self.combo_score:.2f}" if self.is_english else f"Score Combo : {self.combo_score:.2f}"
+        a = f"Current combo score is {self.combo_score:.2f}" if self.is_english else f"Le score de combo actuel est {self.combo_score:.2f}"
         self.combo_score_label.update_text(v, a)
 
     def get_xp_multiplier(self, stage):
-        """Get XP conversion multiplier for a stage."""
-        if stage == 1:
-            return 0.1
-        elif stage == 2:
-            return 0.2
-        elif stage == 3:
-            return 0.4
-        else:
-            # Bonus stages scale: 0.4 + (stage - 3) * 0.1
-            return 0.4 + (stage - 3) * 0.1
+        return 0.05 * stage
 
     def _update_challenge_state_success(self):
-        """Update challenge state after successful Combo Mode completion."""
         if not (self.parent_challenge and hasattr(self.parent_challenge, 'logic')):
             return
-        
         logic = self.parent_challenge.logic
-        
-        # Add base completion reward
+        logic.add_xp(int(self.total_session_xp))
         logic.add_xp(40)
         logic.boss_health = max(0, logic.boss_health - 15)
-        
         logic.modes["combo"]["status"] = "done"
         logic.modes["combo"]["completed"] = True
-        logic.completed_modes_count = sum(
-            1 for v in logic.modes.values() if v["completed"]
-        )
-        
-        # Unlock other modes
+        logic.completed_modes_count = sum(1 for v in logic.modes.values() if v["completed"])
         for mk, data in logic.modes.items():
             if mk != "crazy_party" and not data["completed"]:
                 data["status"] = "unlocked"
-        
         logic.save_progress()
         self.parent_challenge.update_display()
 
     def _show_final_results_page(self):
-        """Show final results after mode completion."""
         if self.is_english:
             title = "COMBO MODE COMPLETE"
             message = (
@@ -1463,7 +1185,7 @@ class ComboTypingMode(GenericTypingMode):
                 f"Correct Answers: {self.correct_count}\n"
                 f"Incorrect Answers: {self.incorrect_count}\n"
                 f"Timeouts: {self.timeout_count}\n"
-                f"Highest Combo: {self.highest_combo:.1f}\n"
+                f"Highest Combo: {self.highest_combo:.2f}\n"
                 f"XP Earned: {int(self.xp_earned)}\n"
                 f"Stages Completed: {self.current_stage}\n\n"
                 f"Completion Bonus: +40 XP | Boss Damage: -15%"
@@ -1476,7 +1198,7 @@ class ComboTypingMode(GenericTypingMode):
                 f"Bonnes Réponses : {self.correct_count}\n"
                 f"Mauvaises Réponses : {self.incorrect_count}\n"
                 f"Dépassements : {self.timeout_count}\n"
-                f"Combo le Plus Élevé : {self.highest_combo:.1f}\n"
+                f"Combo le Plus Élevé : {self.highest_combo:.2f}\n"
                 f"XP Gagné : {int(self.xp_earned)}\n"
                 f"Étapes Complétées : {self.current_stage}\n\n"
                 f"Bonus d'Achèvement : +40 XP | Dommage Boss : -15 %"
@@ -1487,117 +1209,140 @@ class ComboTypingMode(GenericTypingMode):
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
-
         layout = QVBoxLayout()
-
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
-        title_label.setStyleSheet(
-            "font-size: 26px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none; padding: 6px;"
-        )
+        title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
         layout.addWidget(title_label)
-
         msg_browser = AccessibleBrowser(text=message, accessible_text=message)
         msg_browser.setMinimumHeight(240)
         layout.addWidget(msg_browser)
-
         btn_return = AccessiblePushButton(button_text)
         btn_return.clicked.connect(lambda: self._return_to_challenge(dlg))
         layout.addWidget(btn_return)
-
         dlg.setLayout(layout)
         dlg.exec_()
 
     def repeat_current_target(self):
-        """Ctrl: re-announce the current combo target."""
         if not self.current_target:
             return
-        ann = self._get_combo_announcement(self.current_target)
-        if self.base_logic.speaker:
-            self.base_logic.speaker.output(ann)
+        is_multi = self.current_stage > 1 and len(self.current_target) > 1
+        if is_multi:
+            self._pause_timers()
+            spelled = self._get_combo_announcement(self.current_target)
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(spelled)
+            delay = len(spelled) * 65 + 400
+            QTimer.singleShot(delay, self._resume_timers)
+        else:
+            ann = self._get_combo_announcement(self.current_target)
+            if self.base_logic.speaker:
+                self.base_logic.speaker.output(ann)
 
-    def _on_shift_enter(self):
-        """Shift+Enter: exit confirmation with -50 XP warning."""
+    def _pause_timers(self):
+        self._tts_waiting = True
         self.session_timer.stop()
         self.target_timer.stop()
 
+    def _resume_timers(self):
+        if not self._tts_waiting:
+            return
+        self._tts_waiting = False
+        if not self.session_timer.isActive():
+            self.session_timer.start()
+        self.target_timer.start(int(self.target_timeout * 1000))
+        self.input_field.setFocus()
+
+    def on_typing_key_pressed(self):
+        if self._tts_waiting:
+            self._resume_timers()
+
+    def _on_shift_enter(self):
+        self._pause_timers()
+        self._show_exit_dialog()
+
+    def _announce_status(self):
+        self._pause_timers()
+        stage_elapsed = time.time() - self.stage_start_time
+        stage_remaining = self.stage_duration - stage_elapsed
+        if stage_remaining < 0:
+            stage_remaining = 0
+        m = int(stage_remaining) // 60
+        s = int(stage_remaining) % 60
+        if self.is_english:
+            msg = f"Combo score: {self.combo_score:.1f}. XP earned: {self.xp_earned:.1f}. Stage time remaining: {m} minutes {s} seconds."
+        else:
+            msg = f"Score combo : {self.combo_score:.1f}. XP gagnés : {self.xp_earned:.1f}. Temps restant dans l'étape : {m} minutes {s} secondes."
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(msg)
+        delay = len(msg) * 100 + 500
+        QTimer.singleShot(delay, self._resume_timers)
+
+    def _show_exit_dialog(self):
         dlg = QDialog(self)
         dlg.setWindowTitle("Exit?" if self.is_english else "Quitter ?")
         dlg.setMinimumWidth(480)
         dlg.setStyleSheet(self.styleSheet())
         layout = QVBoxLayout()
-
-        msg_text = (
-            "Exit Combo Rush?\n\nA 50 XP penalty will be applied and your session CSV will be deleted."
-            if self.is_english else
-            "Quitter Combo Rush ?\n\nUne penalite de 50 XP sera appliquee et votre CSV de session sera supprime."
-        )
+        msg_text = ("Exit Combo Rush?\n\nA 50 XP penalty will be applied and your session CSV will be deleted." if self.is_english
+                    else "Quitter Combo Rush ?\n\nUne penalite de 50 XP sera appliquee et votre CSV de session sera supprime.")
         msg = AccessibleBrowser(text=msg_text, accessible_text=msg_text)
         layout.addWidget(msg)
-
         btn_row = QHBoxLayout()
         btn_yes = AccessiblePushButton("Yes, exit" if self.is_english else "Oui, quitter")
-        btn_no  = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
+        btn_no = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
         btn_yes.clicked.connect(dlg.accept)
         btn_no.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_yes)
         btn_row.addWidget(btn_no)
         layout.addLayout(btn_row)
         dlg.setLayout(layout)
-
         if dlg.exec_() == QDialog.Accepted:
             self.leave_session()
         else:
-            self.session_timer.start(1000)
-            self.target_timer.start(int(self.target_timeout * 1000))
+            self._resume_timers()
 
     def leave_session(self):
-        """Exit early - penalty and cleanup."""
         self.session_timer.stop()
         self.target_timer.stop()
         self.message_timer.stop()
-
-        # Delete combo CSV on exit
         if self.combo_csv_path and os.path.exists(self.combo_csv_path):
             try:
                 os.remove(self.combo_csv_path)
             except Exception:
                 pass
-
-        # Apply penalty
         if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
             logic = self.parent_challenge.logic
             logic.xp_balance = max(0, logic.xp_balance - 50)
             logic.save_progress()
             self.parent_challenge.update_display()
-
         if self.base_logic.speaker:
-            msg = (
-                "Combo session exited. 50 XP penalty applied."
-                if self.is_english else
-                "Session Combo quittée. Pénalité de 50 XP appliquée."
-            )
+            msg = ("Combo session exited. 50 XP penalty applied." if self.is_english else "Session Combo quittée. Pénalité de 50 XP appliquée.")
             self.base_logic.speaker.output(msg)
-
         if self.parent_challenge:
             self.parent_challenge.pages.setCurrentIndex(1)
         self.close()
 
     def _return_to_challenge(self, dialog):
-        """Return to main challenge battle."""
         dialog.accept()
         if self.parent_challenge:
             self.parent_challenge.pages.setCurrentIndex(1)
             self.parent_challenge.update_display()
         self.close()
 
+    def closeEvent(self, event):
+        if not self.session_start_time or not self.session_timer.isActive():
+            event.accept()
+            return
+        self.session_timer.stop()
+        self.target_timer.stop()
+        self.message_timer.stop()
+        self._show_exit_dialog()
+        event.ignore()
 
 
-# ============= PRECISION ARENA WELCOME PAGE =============
+# ============= PRECISION ARENA =============
 
 class PrecisionWelcomePage(QWidget):
-    """Intro screen shown before Precision Arena typing session."""
-
     def __init__(self, parent, is_english=True):
         super().__init__()
         self.parent_challenge = parent
@@ -1606,7 +1351,6 @@ class PrecisionWelcomePage(QWidget):
 
     def _setup_ui(self):
         layout = QVBoxLayout()
-
         if self.is_english:
             title_text   = "PRECISION ARENA - Accuracy Marathon"
             instructions = (
@@ -1651,25 +1395,18 @@ class PrecisionWelcomePage(QWidget):
             notyet_text = "Pas encore"
 
         title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
-        title.setStyleSheet(
-            "font-size: 26px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none; padding: 8px;"
-        )
+        title.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 8px;")
         layout.addWidget(title)
-
         inst_field = AccessibleBrowser(text=instructions, accessible_text=instructions)
         inst_field.setMinimumHeight(380)
         layout.addWidget(inst_field)
-
         btn_layout = QHBoxLayout()
         btn_ready = AccessiblePushButton(ready_text)
         btn_ready.clicked.connect(self._launch)
         btn_layout.addWidget(btn_ready)
-
         btn_notyet = AccessiblePushButton(notyet_text)
         btn_notyet.clicked.connect(self.close)
         btn_layout.addWidget(btn_notyet)
-
         layout.addLayout(btn_layout)
         layout.addStretch()
         self.setLayout(layout)
@@ -1679,22 +1416,10 @@ class PrecisionWelcomePage(QWidget):
             self.parent_challenge.launch_precision_session()
         self.close()
 
-# ============= PRECISION ARENA TYPING MODE =============
 
 class PrecisionArenaMode(QWidget):
-    """
-    Precision Arena - 7-minute accuracy marathon.
-    No timeout system. Auto-validates at target length.
-    Counts characters, not attempts.
-    Medal system based on accuracy + CPM requirement.
-    First 4 min: random. Final 3 min: adaptive weighted.
-    4-char targets are real French words, each shown at most once per session.
-    """
-
-    SESSION_DURATION = 420   # 7 minutes in seconds
-    ADAPTIVE_START   = 240   # switch to adaptive at 4 minutes
-
-    # (medal_key, accuracy_threshold, icon_path, bonus_xp)
+    SESSION_DURATION = 420
+    ADAPTIVE_START   = 240
     MEDALS = [
         ("master",  99, "static/mtr.png", 150),
         ("diamond", 97, "static/dmd.png", 100),
@@ -1702,10 +1427,6 @@ class PrecisionArenaMode(QWidget):
         ("silver",  93, "static/slv.png",  50),
         ("bronze",  91, "static/bnz.png",  25),
     ]
-
-    # Real 4-letter French words (no accents, pure ASCII).
-    # Each appears at most once per session; when pool runs out,
-    # the slot silently falls back to a 3-char target.
     FOUR_CHAR_WORDS = [
         "chat", "main", "pied", "nuit", "jour", "lune", "rose", "bleu",
         "vert", "noir", "gris", "beau", "fort", "vrai", "faux", "bois",
@@ -1727,77 +1448,51 @@ class PrecisionArenaMode(QWidget):
 
     def __init__(self, base_logic, is_english=True, parent=None):
         super().__init__()
-        self.base_logic       = base_logic
-        self.is_english       = is_english
+        self.base_logic = base_logic
+        self.is_english = is_english
         self.parent_challenge = parent
-
-        # Session state
-        self.session_elapsed      = 0
-        self.current_target       = ""
-        self.current_phase        = "random"
-
-        # Stats - character-based, not attempt-based
-        self.correct_chars        = 0
-        self.incorrect_chars      = 0
-
-        # 4-char word pool for this session - shuffled, each used once
-        self.four_char_pool       = []
-
-        # Adaptive phase
-        self.phase_weights_built  = False
-        self.session_letter_stats = {}   # {LETTER: {correct: N, total: N}}
-        self.adaptive_weights     = {}   # {letter: weight}
-
-        # CSV paths
-        self.precision_csv_path     = None
+        self.session_elapsed = 0
+        self.current_target = ""
+        self.current_phase = "random"
+        self.correct_chars = 0
+        self.incorrect_chars = 0
+        self.four_char_pool = []
+        self.phase_weights_built = False
+        self.session_letter_stats = {}
+        self.adaptive_weights = {}
+        self.precision_csv_path = None
         self.precision_history_path = None
-        self.warmup_history_path    = None
-
+        self.warmup_history_path = None
+        self._announcement_paused = False
         self._setup_ui()
         self._setup_timer()
 
-    # ---- UI ----
-
     def _setup_ui(self):
         layout = QVBoxLayout()
-
         if self.is_english:
-            title_text     = "PRECISION ARENA - Accuracy Marathon"
-            instructions   = (
-                "7 minutes nonstop. No timeouts. Type the target - validates automatically.\n"
-                "First 4 min: random. Final 3 min: adapts to your weak letters."
-            )
-            correct_v      = "Correct Chars: 0"
-            incorrect_v    = "Incorrect Chars: 0"
-            accuracy_v     = "Accuracy: ?"
-            timer_v        = "Remaining: 7:00"
-            button_text    = "Leave and Go Back to Challenge Battle"
+            title_text = "PRECISION ARENA - Accuracy Marathon"
+            instructions = "7 minutes nonstop. No timeouts. Type the target - validates automatically.\nFirst 4 min: random. Final 3 min: adapts to your weak letters."
+            correct_v = "Correct Chars: 0"
+            incorrect_v = "Incorrect Chars: 0"
+            accuracy_v = "Accuracy: ?"
+            timer_v = "Remaining: 7:00"
+            button_text = "Leave and Go Back to Challenge Battle"
         else:
-            title_text     = "PRECISION ARENA - Marathon de Precision"
-            instructions   = (
-                "7 minutes sans arret. Pas de delai. Tapez la cible - validation automatique.\n"
-                "4 min aleatoires. 3 dernieres min : s'adapte a vos lettres faibles."
-            )
-            correct_v      = "Caracteres Corrects : 0"
-            incorrect_v    = "Caracteres Incorrects : 0"
-            accuracy_v     = "Precision : ?"
-            timer_v        = "Restant : 7:00"
-            button_text    = "Quitter et Retourner au Combat de Defi"
+            title_text = "PRECISION ARENA - Marathon de Precision"
+            instructions = "7 minutes sans arret. Pas de delai. Tapez la cible - validation automatique.\n4 min aleatoires. 3 dernieres min : s'adapte a vos lettres faibles."
+            correct_v = "Caracteres Corrects : 0"
+            incorrect_v = "Caracteres Incorrects : 0"
+            accuracy_v = "Precision : ?"
+            timer_v = "Restant : 7:00"
+            button_text = "Quitter et Retourner au Combat de Defi"
 
         mode_title = AccessibleLabel(visual_text=title_text, accessible_text=title_text)
-        mode_title.setStyleSheet(
-            "font-size: 24px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none; padding: 6px;"
-        )
+        mode_title.setStyleSheet("font-size: 24px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
         layout.addWidget(mode_title)
-
-        self.instructions_display = AccessibleBrowser(
-            text=instructions, accessible_text=instructions
-        )
+        self.instructions_display = AccessibleBrowser(text=instructions, accessible_text=instructions)
         self.instructions_display.setMinimumHeight(70)
         layout.addWidget(self.instructions_display)
 
-        # Stats row 1: correct + incorrect chars
         stats1 = QHBoxLayout()
         self.correct_label = AccessibleLabel(visual_text=correct_v, accessible_text=correct_v)
         stats1.addWidget(self.correct_label)
@@ -1805,29 +1500,18 @@ class PrecisionArenaMode(QWidget):
         stats1.addWidget(self.incorrect_label)
         layout.addLayout(stats1)
 
-        # Stats row 2: accuracy + timer
         stats2 = QHBoxLayout()
-        acc_accessible = ("Accuracy hidden until adaptive phase."
-                          if self.is_english else
-                          "Precision masquee jusqu'a la phase adaptative.")
+        acc_accessible = ("Accuracy hidden until adaptive phase." if self.is_english else "Precision masquee jusqu'a la phase adaptative.")
         self.accuracy_label = AccessibleLabel(visual_text=accuracy_v, accessible_text=acc_accessible)
         stats2.addWidget(self.accuracy_label)
         self.timer_label = AccessibleLabel(visual_text=timer_v, accessible_text=timer_v)
         stats2.addWidget(self.timer_label)
         layout.addLayout(stats2)
 
-        # Target display
-        self.target_display = AccessibleLabel(
-            visual_text="", accessible_text="Waiting for session to start"
-        )
-        self.target_display.setStyleSheet(
-            "font-size: 110px; color: #f9d342;"
-            "border: 3px solid #f9d342; border-radius: 10px;"
-            "background-color: #1a1a2e; padding: 8px; min-height: 160px;"
-        )
+        self.target_display = AccessibleLabel(visual_text="", accessible_text="Waiting for session to start")
+        self.target_display.setStyleSheet("font-size: 110px; color: #f9d342; border: 3px solid #f9d342; border-radius: 10px; background-color: #1a1a2e; padding: 8px; min-height: 160px;")
         layout.addWidget(self.target_display)
 
-        # Typing input
         self.input_field = ChallengeTypingInput(self)
         self.input_field.textChanged.connect(self._on_input_changed)
         layout.addWidget(self.input_field)
@@ -1835,49 +1519,37 @@ class PrecisionArenaMode(QWidget):
         btn_leave = AccessiblePushButton(button_text)
         btn_leave.clicked.connect(self.leave_session)
         layout.addWidget(btn_leave)
-
         self.setLayout(layout)
 
     def _setup_timer(self):
         self.session_timer = QTimer()
         self.session_timer.timeout.connect(self._tick)
 
-    # ---- Session lifecycle ----
-
     def start_session(self):
-        self.session_elapsed      = 0
-        self.correct_chars        = 0
-        self.incorrect_chars      = 0
-        self.current_phase        = "random"
-        self.phase_weights_built  = False
+        self.session_elapsed = 0
+        self.correct_chars = 0
+        self.incorrect_chars = 0
+        self.current_phase = "random"
+        self.phase_weights_built = False
         self.session_letter_stats = {}
-
-        # Shuffle a fresh copy of the word pool for this session
         self.four_char_pool = list(self.FOUR_CHAR_WORDS)
         random.shuffle(self.four_char_pool)
-
         self._init_paths()
         self._init_precision_csv()
         self._refresh_stats_display()
-
         self.session_timer.start(1000)
         self._next_target()
-
         if self.base_logic.speaker:
-            msg = ("Precision Arena started. Focus on accuracy!"
-                   if self.is_english else
-                   "Precision Arena demarree. Concentrez-vous sur la precision !")
+            msg = ("Precision Arena started. Focus on accuracy!" if self.is_english else "Precision Arena demarree. Concentrez-vous sur la precision !")
             self.base_logic.speaker.output(msg)
-
-    # ---- CSV ----
 
     def _init_paths(self):
         clean_name = self.base_logic.get_clean_username()
-        user_dir   = os.path.join(self.base_logic.data_dir, clean_name)
+        user_dir = os.path.join(self.base_logic.data_dir, clean_name)
         os.makedirs(user_dir, exist_ok=True)
-        self.precision_csv_path     = os.path.join(user_dir, f"{clean_name}_Precision_Arena_Session.csv")
+        self.precision_csv_path = os.path.join(user_dir, f"{clean_name}_Precision_Arena_Session.csv")
         self.precision_history_path = os.path.join(user_dir, f"{clean_name}_Precision_Arena_History.csv")
-        self.warmup_history_path    = os.path.join(user_dir, f"{clean_name}_Warmup_Session.csv")
+        self.warmup_history_path = os.path.join(user_dir, f"{clean_name}_Warmup_Session.csv")
 
     def _init_precision_csv(self):
         if not self.precision_csv_path:
@@ -1903,7 +1575,6 @@ class PrecisionArenaMode(QWidget):
             self.current_phase, minute,
             self.correct_chars, self.incorrect_chars,
         ]
-        # Write to session file AND cumulative history (history kept even on failed runs)
         for path in (self.precision_csv_path, self.precision_history_path):
             if not path:
                 continue
@@ -1921,44 +1592,28 @@ class PrecisionArenaMode(QWidget):
             except Exception:
                 pass
 
-    # ---- Target generation ----
-
     def _generate_target(self):
-        """
-        Pick a target length then build the target.
-        Weights: 33% 1-char, 43% 2-char, 17% 3-char, 7% 4-char.
-        4-char slot pulls a real French word from the session pool (no repeat).
-        If the pool is exhausted the slot silently becomes a 3-char target.
-        """
         lengths = [1, 2, 3, 4]
-        length  = random.choices(lengths, weights=[33, 43, 17, 7], k=1)[0]
-
+        length = random.choices(lengths, weights=[33, 43, 17, 7], k=1)[0]
         if length == 4:
             if self.four_char_pool:
-                return self.four_char_pool.pop()   # already shuffled, pop from end
+                return self.four_char_pool.pop()
             else:
-                length = 3   # pool exhausted - fall back silently
-
+                length = 3
         return "".join(self._pick_char() for _ in range(length))
 
     def _pick_char(self):
-        """Pick one character. ~5% symbols, rest letters (adaptive or random)."""
         if random.random() < 0.05 and symbol_pronounciation:
             return random.choice(list(symbol_pronounciation.keys()))
-
         letters = [chr(c) for c in range(ord('a'), ord('z') + 1)]
-
         if self.current_phase == "adaptive" and self.adaptive_weights:
-            weights     = [self.adaptive_weights.get(l, 4) for l in letters]
+            weights = [self.adaptive_weights.get(l, 4) for l in letters]
             base_letter = random.choices(letters, weights=weights, k=1)[0]
         else:
             base_letter = random.choice(letters)
-
-        # 50/50 upper/lower
         return base_letter.upper() if random.random() < 0.5 else base_letter
 
     def _get_char_announcement(self, char):
-        """Get screen reader text for a single character."""
         if char in symbol_pronounciation:
             return symbol_pronounciation[char]
         if char.isupper() and char.isalpha():
@@ -1966,35 +1621,19 @@ class PrecisionArenaMode(QWidget):
         return char
 
     def _next_target(self):
-        """
-        Show next target and announce it.
-        All targets are spelled letter by letter, exactly like word practice
-        in the standard weeks. Input is disabled during spelling for targets
-        of length 2 or more, then re-enabled with a beep so the screen reader
-        is never interrupted by a focus shift mid-announcement.
-        Single-char targets are announced instantly (no delay needed).
-        """
         self.current_target = self._generate_target()
-
-        # Always spell every target letter by letter - words, couples, triples, singles
         char_announcements = [self._get_char_announcement(c) for c in self.current_target]
         announcement = ", ".join(char_announcements)
-
         self.target_display.update_text(self.current_target, announcement)
-
-        self.input_field.blockSignals(True)
+        self.input_field.textChanged.disconnect(self._on_input_changed)
         self.input_field.clear()
-        self.input_field.blockSignals(False)
-
+        self.input_field.textChanged.connect(self._on_input_changed)
         if len(self.current_target) == 1:
-            # Single char: announce and enable immediately - no delay needed
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(announcement)
             self.input_field.setEnabled(True)
             self.input_field.setFocus()
         else:
-            # 2, 3, 4 chars: disable input during spelling, re-enable with beep after delay
-            # Delay calculated from total announcement text length so TTS finishes first
             self.input_field.setEnabled(False)
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(announcement)
@@ -2007,32 +1646,22 @@ class PrecisionArenaMode(QWidget):
         self.input_field.setEnabled(True)
         self.input_field.setFocus()
 
-    # ---- Input handling ----
-
     def _on_input_changed(self, text):
         if not text or not self.current_target:
             return
-        # Wait until enough characters typed
         if len(text) < len(self.current_target):
             return
-
         typed = text[:len(self.current_target)]
-
-        self.input_field.blockSignals(True)
+        self.input_field.textChanged.disconnect(self._on_input_changed)
         self.input_field.clear()
-        self.input_field.blockSignals(False)
-
+        self.input_field.textChanged.connect(self._on_input_changed)
         was_correct = (typed == self.current_target)
-
-        # Count characters (not attempts)
         if was_correct:
             winsound.Beep(1500, 100)
             self.correct_chars += len(self.current_target)
         else:
             winsound.Beep(400, 200)
             self.incorrect_chars += len(self.current_target)
-
-        # Track letter stats during random phase for adaptive weighting
         if self.current_phase == "random":
             for char in self.current_target:
                 if char.isalpha() and char not in symbol_pronounciation:
@@ -2041,99 +1670,67 @@ class PrecisionArenaMode(QWidget):
                     rec["total"] += 1
                     if was_correct:
                         rec["correct"] += 1
-
         self._log_attempt(self.current_target, typed, was_correct)
         self._refresh_stats_display()
         self.input_field.setFocus()
         self._next_target()
 
-    # ---- Displays ----
-
     def _refresh_stats_display(self):
-        # Correct chars
-        v = (f"Correct Chars: {self.correct_chars}"
-             if self.is_english else f"Caracteres Corrects : {self.correct_chars}")
-        a = (f"Correct characters: {self.correct_chars}"
-             if self.is_english else f"Caracteres corrects : {self.correct_chars}")
+        v = (f"Correct Chars: {self.correct_chars}" if self.is_english else f"Caracteres Corrects : {self.correct_chars}")
+        a = (f"Correct characters: {self.correct_chars}" if self.is_english else f"Caracteres corrects : {self.correct_chars}")
         self.correct_label.update_text(v, a)
-
-        # Incorrect chars
-        v = (f"Incorrect Chars: {self.incorrect_chars}"
-             if self.is_english else f"Caracteres Incorrects : {self.incorrect_chars}")
-        a = (f"Incorrect characters: {self.incorrect_chars}"
-             if self.is_english else f"Caracteres incorrects : {self.incorrect_chars}")
+        v = (f"Incorrect Chars: {self.incorrect_chars}" if self.is_english else f"Caracteres Incorrects : {self.incorrect_chars}")
+        a = (f"Incorrect characters: {self.incorrect_chars}" if self.is_english else f"Caracteres incorrects : {self.incorrect_chars}")
         self.incorrect_label.update_text(v, a)
-
-        # Accuracy: hidden first 4 min, live last 3 min
         if self.session_elapsed < self.ADAPTIVE_START:
             v = "Accuracy: ?" if self.is_english else "Precision : ?"
-            a = ("Accuracy hidden until adaptive phase."
-                 if self.is_english else "Precision masquee jusqu'a la phase adaptative.")
+            a = ("Accuracy hidden until adaptive phase." if self.is_english else "Precision masquee jusqu'a la phase adaptative.")
         else:
             total = self.correct_chars + self.incorrect_chars
-            acc   = (self.correct_chars / total * 100) if total > 0 else 0.0
+            acc = (self.correct_chars / total * 100) if total > 0 else 0.0
             v = f"Accuracy: {acc:.1f}%" if self.is_english else f"Precision : {acc:.1f}%"
-            a = (f"Current accuracy: {acc:.1f} percent"
-                 if self.is_english else f"Precision actuelle : {acc:.1f} pourcent")
+            a = f"Current accuracy: {acc:.1f} percent" if self.is_english else f"Precision actuelle : {acc:.1f} pourcent"
         self.accuracy_label.update_text(v, a)
-
-    # ---- Session timer ----
 
     def _tick(self):
         self.session_elapsed += 1
         remaining = self.SESSION_DURATION - self.session_elapsed
-
         if remaining <= 0:
             self._end_session()
             return
-
-        # Switch to adaptive phase at 4 minutes
         if self.session_elapsed >= self.ADAPTIVE_START and not self.phase_weights_built:
             self._build_adaptive_weights()
             self.current_phase = "adaptive"
             if self.base_logic.speaker:
-                msg = ("Adaptive phase started. Focusing on your weak letters."
-                       if self.is_english else
-                       "Phase adaptative demarree. Concentration sur vos lettres faibles.")
+                msg = ("Adaptive phase started. Focusing on your weak letters." if self.is_english else "Phase adaptative demarree. Concentration sur vos lettres faibles.")
                 self.base_logic.speaker.output(msg)
-
         m = remaining // 60
         s = remaining % 60
         v = f"Remaining: {m}:{s:02d}" if self.is_english else f"Restant : {m}:{s:02d}"
-        a = (f"{m} minutes {s} seconds remaining"
-             if self.is_english else f"{m} minutes {s} secondes restantes")
+        a = f"{m} minutes {s} seconds remaining" if self.is_english else f"{m} minutes {s} secondes restantes"
         self.timer_label.update_text(v, a)
         self._refresh_stats_display()
 
-    # ---- Adaptive weights ----
-
     def _build_adaptive_weights(self):
-        """Merge accuracy from warmup history + past precision history + session stats."""
         merged = {}
-
         for path in (self.warmup_history_path, self.precision_history_path):
             for letter, acc in self._load_char_accuracy(path).items():
                 merged.setdefault(letter, []).append(acc)
-
         for letter, counts in self.session_letter_stats.items():
             if counts["total"] > 0:
                 acc = counts["correct"] / counts["total"]
                 merged.setdefault(letter, []).append(acc)
-
         letters = [chr(c) for c in range(ord('a'), ord('z') + 1)]
         for letter in letters:
             key = letter.upper()
             if key in merged and merged[key]:
                 avg_acc = sum(merged[key]) / len(merged[key])
             else:
-                avg_acc = 0.88  # default: assume reasonable
-            # Weight range 1-20; weaker letters (lower accuracy) get higher weight
+                avg_acc = 0.88
             self.adaptive_weights[letter] = max(1, min(int((1.0 - avg_acc) * 22) + 1, 20))
-
         self.phase_weights_built = True
 
     def _load_char_accuracy(self, csv_path):
-        """Return {LETTER: accuracy_float} from a CSV file. Ignores timing columns."""
         result = {}
         if not csv_path or not os.path.exists(csv_path):
             return result
@@ -2141,9 +1738,9 @@ class PrecisionArenaMode(QWidget):
             counts = {}
             with open(csv_path, 'r', newline='', encoding='utf-8') as f:
                 for row in csv.DictReader(f):
-                    target      = row.get("Target", "")
+                    target = row.get("Target", "")
                     correct_raw = row.get("Correct", "False").strip().lower()
-                    correct     = correct_raw in ("true", "1", "yes", "correct")
+                    correct = correct_raw in ("true", "1", "yes", "correct")
                     for char in target:
                         key = char.upper()
                         if key.isalpha() and char not in symbol_pronounciation:
@@ -2158,40 +1755,29 @@ class PrecisionArenaMode(QWidget):
             pass
         return result
 
-    # ---- Session end ----
-
     def _end_session(self):
         self.session_timer.stop()
         self.input_field.setEnabled(False)
-
         total_chars = self.correct_chars + self.incorrect_chars
-        accuracy    = (self.correct_chars / total_chars * 100) if total_chars > 0 else 0.0
-        cpm         = total_chars / 7.0
-
-        # Determine medal by accuracy
+        accuracy = (self.correct_chars / total_chars * 100) if total_chars > 0 else 0.0
+        cpm = total_chars / 7.0
         medal = medal_path = None
         medal_xp = 0
         for m_key, m_thresh, m_file, m_xp in self.MEDALS:
             if accuracy >= m_thresh:
-                medal      = m_key
+                medal = m_key
                 medal_path = m_file
-                medal_xp   = m_xp
+                medal_xp = m_xp
                 break
-
-        # CPM gate: medal shown but not granted if cpm < 20
-        granted     = (medal is not None) and (cpm >= 20)
-        passed      = granted
-
-        base_xp     = 50 if medal else 0
-        earned_xp   = base_xp + medal_xp
-
+        granted = (medal is not None) and (cpm >= 20)
+        passed = granted
+        base_xp = 50 if medal else 0
+        earned_xp = base_xp + medal_xp
         if medal and not granted:
-            earned_xp = earned_xp // 2   # halve if CPM fails
+            earned_xp = earned_xp // 2
         if not medal:
             earned_xp = 0
-
         boss_damage = 15 if granted else 0
-
         self._update_challenge_state(earned_xp, boss_damage, passed)
         self._show_results(accuracy, cpm, medal, medal_path, granted, earned_xp, boss_damage, passed)
 
@@ -2199,93 +1785,70 @@ class PrecisionArenaMode(QWidget):
         if not (self.parent_challenge and hasattr(self.parent_challenge, 'logic')):
             return
         logic = self.parent_challenge.logic
-
         if earned_xp > 0:
             logic.add_xp(earned_xp)
         if boss_damage > 0:
             logic.boss_health = max(0, logic.boss_health - boss_damage)
-
         if passed:
-            logic.modes["precision"]["status"]    = "done"
+            logic.modes["precision"]["status"] = "done"
             logic.modes["precision"]["completed"] = True
             logic.completed_modes_count = sum(1 for v in logic.modes.values() if v["completed"])
             for mk, data in logic.modes.items():
                 if mk != "crazy_party" and not data["completed"]:
                     data["status"] = "unlocked"
-
         logic.save_progress()
         self.parent_challenge.update_display()
 
-    def _show_results(self, accuracy, cpm, medal, medal_path,
-                      granted, earned_xp, boss_damage, passed):
-        medal_display = {
-            "bronze": "Bronze", "silver": "Silver",
-            "gold": "Gold", "diamond": "Diamond", "master": "Master",
-        }
-
+    def _show_results(self, accuracy, cpm, medal, medal_path, granted, earned_xp, boss_damage, passed):
+        medal_display = {"bronze": "Bronze", "silver": "Silver", "gold": "Gold", "diamond": "Diamond", "master": "Master"}
         if self.is_english:
-            title         = "PRECISION ARENA RESULTS"
-            correct_text  = f"Correct Characters: {self.correct_chars}"
-            incorrect_text= f"Incorrect Characters: {self.incorrect_chars}"
-            acc_text      = f"Final Accuracy: {accuracy:.1f}%"
-            cpm_text      = f"Final CPM: {cpm:.1f}"
-            medal_text    = f"Medal: {medal_display.get(medal, 'None')}"
-            grant_text    = ("Medal Granted" if granted
-                             else ("Not Granted - CPM too low" if medal else "No Medal - below 91%"))
-            xp_text       = f"XP Earned: {earned_xp}"
-            boss_text     = f"Boss Health: -{boss_damage}%" if boss_damage else "Boss Health: no change"
-            state_text    = "PASSED" if passed else "FAILED - retry to earn full rewards"
-            retry_text    = "Retry"
-            return_text   = "Return to Challenge Battle"
-            go_back_text  = "Go Back to Challenge Battle"
+            title = "PRECISION ARENA RESULTS"
+            correct_text = f"Correct Characters: {self.correct_chars}"
+            incorrect_text = f"Incorrect Characters: {self.incorrect_chars}"
+            acc_text = f"Final Accuracy: {accuracy:.1f}%"
+            cpm_text = f"Final CPM: {cpm:.1f}"
+            medal_text = f"Medal: {medal_display.get(medal, 'None')}"
+            grant_text = ("Medal Granted" if granted else ("Not Granted - CPM too low" if medal else "No Medal - below 91%"))
+            xp_text = f"XP Earned: {earned_xp}"
+            boss_text = f"Boss Health: -{boss_damage}%" if boss_damage else "Boss Health: no change"
+            state_text = "PASSED" if passed else "FAILED - retry to earn full rewards"
+            retry_text = "Retry"
+            return_text = "Return to Challenge Battle"
+            go_back_text = "Go Back to Challenge Battle"
         else:
-            title         = "RESULTATS PRECISION ARENA"
-            correct_text  = f"Caracteres Corrects : {self.correct_chars}"
-            incorrect_text= f"Caracteres Incorrects : {self.incorrect_chars}"
-            acc_text      = f"Precision Finale : {accuracy:.1f}%"
-            cpm_text      = f"CPM Final : {cpm:.1f}"
-            medal_text    = f"Medaille : {medal_display.get(medal, 'Aucune')}"
-            grant_text    = ("Medaille Accordee" if granted
-                             else ("Non Accordee - CPM insuffisant" if medal else "Aucune Medaille - sous 91%"))
-            xp_text       = f"XP Gagnes : {earned_xp}"
-            boss_text     = f"Sante Boss : -{boss_damage}%" if boss_damage else "Sante Boss : pas de changement"
-            state_text    = "REUSSI" if passed else "ECHOUE - recommencez pour les recompenses"
-            retry_text    = "Recommencer"
-            return_text   = "Retour au Combat de Defi"
-            go_back_text  = "Retour au Combat de Defi"
+            title = "RESULTATS PRECISION ARENA"
+            correct_text = f"Caracteres Corrects : {self.correct_chars}"
+            incorrect_text = f"Caracteres Incorrects : {self.incorrect_chars}"
+            acc_text = f"Precision Finale : {accuracy:.1f}%"
+            cpm_text = f"CPM Final : {cpm:.1f}"
+            medal_text = f"Medaille : {medal_display.get(medal, 'Aucune')}"
+            grant_text = ("Medaille Accordee" if granted else ("Non Accordee - CPM insuffisant" if medal else "Aucune Medaille - sous 91%"))
+            xp_text = f"XP Gagnes : {earned_xp}"
+            boss_text = f"Sante Boss : -{boss_damage}%" if boss_damage else "Sante Boss : pas de changement"
+            state_text = "REUSSI" if passed else "ECHOUE - recommencez pour les recompenses"
+            retry_text = "Recommencer"
+            return_text = "Retour au Combat de Defi"
+            go_back_text = "Retour au Combat de Defi"
 
         dlg = QDialog(self)
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(560)
         dlg.setStyleSheet(self.styleSheet())
-
         layout = QVBoxLayout()
-
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
-        title_label.setStyleSheet(
-            "font-size: 26px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none; padding: 6px;"
-        )
+        title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
         layout.addWidget(title_label)
-
-        stats_text = "\n".join([
-            correct_text, incorrect_text, acc_text, cpm_text,
-            medal_text, grant_text, xp_text, boss_text, state_text,
-        ])
+        stats_text = "\n".join([correct_text, incorrect_text, acc_text, cpm_text, medal_text, grant_text, xp_text, boss_text, state_text])
         stats_browser = AccessibleBrowser(text=stats_text, accessible_text=stats_text)
         stats_browser.setMinimumHeight(260)
         layout.addWidget(stats_browser)
-
-        # Medal icon (or black square placeholder)
         base_dir = os.path.dirname(os.path.abspath(__file__))
         icon_label = QLabel()
         icon_label.setAlignment(Qt.AlignCenter)
         if medal and medal_path:
             full_path = os.path.join(base_dir, medal_path)
             if os.path.exists(full_path):
-                pix = QPixmap(full_path).scaled(
-                    100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
+                pix = QPixmap(full_path).scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 icon_label.setPixmap(pix)
             else:
                 icon_label.setFixedSize(60, 60)
@@ -2294,8 +1857,6 @@ class PrecisionArenaMode(QWidget):
             icon_label.setFixedSize(40, 40)
             icon_label.setStyleSheet("background-color: black;")
         layout.addWidget(icon_label)
-
-        # Buttons
         btn_row = QHBoxLayout()
         if not passed:
             btn_retry = AccessiblePushButton(retry_text)
@@ -2308,21 +1869,19 @@ class PrecisionArenaMode(QWidget):
             btn_go = AccessiblePushButton(go_back_text)
             btn_go.clicked.connect(lambda: self._close_and_return(dlg))
             btn_row.addWidget(btn_go)
-
         layout.addLayout(btn_row)
         dlg.setLayout(layout)
         dlg.exec_()
 
     def _retry(self, dialog):
-        """Reset state and restart session without closing window."""
         dialog.accept()
-        self.session_elapsed      = 0
-        self.correct_chars        = 0
-        self.incorrect_chars      = 0
-        self.current_phase        = "random"
-        self.phase_weights_built  = False
+        self.session_elapsed = 0
+        self.correct_chars = 0
+        self.incorrect_chars = 0
+        self.current_phase = "random"
+        self.phase_weights_built = False
         self.session_letter_stats = {}
-        self.four_char_pool       = list(self.FOUR_CHAR_WORDS)
+        self.four_char_pool = list(self.FOUR_CHAR_WORDS)
         random.shuffle(self.four_char_pool)
         self._init_precision_csv()
         self._refresh_stats_display()
@@ -2338,7 +1897,6 @@ class PrecisionArenaMode(QWidget):
         self.close()
 
     def repeat_current_target(self):
-        """Ctrl: re-announce the current target."""
         if not self.current_target:
             return
         char_announcements = [self._get_char_announcement(c) for c in self.current_target]
@@ -2346,147 +1904,171 @@ class PrecisionArenaMode(QWidget):
         if self.base_logic.speaker:
             self.base_logic.speaker.output(ann)
 
-    def _on_shift_enter(self):
-        """Shift+Enter: exit confirmation with -50 XP warning."""
-        self.session_timer.stop()
+    def _pause_timers(self):
+        if not self._announcement_paused:
+            self._announcement_paused = True
+            self.session_timer.stop()
 
+    def _resume_timers(self):
+        if self._announcement_paused:
+            self._announcement_paused = False
+            if not self.session_timer.isActive() and self.session_elapsed < self.SESSION_DURATION:
+                self.session_timer.start(1000)
+
+    def on_typing_key_pressed(self):
+        if self._announcement_paused:
+            self._resume_timers()
+
+    def _on_shift_enter(self):
+        self._pause_timers()
+        remaining = self.SESSION_DURATION - self.session_elapsed
+        if remaining < 0:
+            remaining = 0
+        m = remaining // 60
+        s = remaining % 60
+        total_chars = self.correct_chars + self.incorrect_chars
+        if total_chars > 0 and self.session_elapsed >= self.ADAPTIVE_START:
+            acc = (self.correct_chars / total_chars) * 100
+            acc_text = f"{acc:.1f}%"
+        else:
+            acc_text = "?" if self.is_english else "?"
+        if self.is_english:
+            msg = f"Accuracy: {acc_text}. Time remaining: {m} minutes {s} seconds."
+        else:
+            msg = f"Précision : {acc_text}. Temps restant : {m} minutes {s} secondes."
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(msg)
+        self._show_exit_dialog()
+
+    def _announce_status(self):
+        self._pause_timers()
+        remaining = self.SESSION_DURATION - self.session_elapsed
+        if remaining < 0:
+            remaining = 0
+        m = remaining // 60
+        s = remaining % 60
+        total_chars = self.correct_chars + self.incorrect_chars
+        if total_chars > 0 and self.session_elapsed >= self.ADAPTIVE_START:
+            acc = (self.correct_chars / total_chars) * 100
+            acc_text = f"{acc:.1f}%"
+        else:
+            acc_text = "?" if self.is_english else "?"
+        if self.is_english:
+            msg = f"Accuracy: {acc_text}. Time remaining: {m} minutes {s} seconds."
+        else:
+            msg = f"Précision : {acc_text}. Temps restant : {m} minutes {s} secondes."
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(msg)
+        delay = len(msg) * 100 + 500
+        QTimer.singleShot(delay, self._resume_timers)
+
+    def _show_exit_dialog(self):
         dlg = QDialog(self)
         dlg.setWindowTitle("Exit?" if self.is_english else "Quitter ?")
         dlg.setMinimumWidth(480)
         dlg.setStyleSheet(self.styleSheet())
         layout = QVBoxLayout()
-
-        msg_text = (
-            "Exit Precision Arena?\n\nA 50 XP penalty will be applied. Your history CSV is kept."
-            if self.is_english else
-            "Quitter Precision Arena ?\n\nUne penalite de 50 XP sera appliquee. Votre historique CSV est conserve."
-        )
+        msg_text = ("Exit Precision Arena?\n\nA 50 XP penalty will be applied. Your history CSV is kept." if self.is_english
+                    else "Quitter Precision Arena ?\n\nUne penalite de 50 XP sera appliquee. Votre historique CSV est conserve.")
         msg = AccessibleBrowser(text=msg_text, accessible_text=msg_text)
         layout.addWidget(msg)
-
         btn_row = QHBoxLayout()
         btn_yes = AccessiblePushButton("Yes, exit" if self.is_english else "Oui, quitter")
-        btn_no  = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
+        btn_no = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
         btn_yes.clicked.connect(dlg.accept)
         btn_no.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_yes)
         btn_row.addWidget(btn_no)
         layout.addLayout(btn_row)
         dlg.setLayout(layout)
-
         if dlg.exec_() == QDialog.Accepted:
             self.leave_session()
         else:
-            self.session_timer.start(1000)
+            self._resume_timers()
 
     def leave_session(self):
-        """Manual exit: delete session CSV, apply -50 XP penalty."""
         self.session_timer.stop()
         self.input_field.setEnabled(False)
-
-        # Delete session CSV only on manual leave; history CSV is kept
         if self.precision_csv_path and os.path.exists(self.precision_csv_path):
             try:
                 os.remove(self.precision_csv_path)
             except Exception:
                 pass
-
         if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
             logic = self.parent_challenge.logic
             logic.xp_balance = max(0, logic.xp_balance - 50)
             logic.save_progress()
             self.parent_challenge.update_display()
-
         if self.base_logic.speaker:
-            msg = ("Precision Arena exited. 50 XP penalty applied."
-                   if self.is_english else
-                   "Precision Arena quittee. Penalite de 50 XP appliquee.")
+            msg = ("Precision Arena exited. 50 XP penalty applied." if self.is_english else "Precision Arena quittee. Penalite de 50 XP appliquee.")
             self.base_logic.speaker.output(msg)
-
         if self.parent_challenge:
             self.parent_challenge.pages.setCurrentIndex(1)
         self.close()
 
     def closeEvent(self, event):
+        if not hasattr(self, 'session_elapsed') or self.session_elapsed >= self.SESSION_DURATION:
+            event.accept()
+            return
         self.session_timer.stop()
-        event.accept()
+        self.input_field.setEnabled(False)
+        self._show_exit_dialog()
+        event.ignore()
 
 
 # ============= CRAZY PARTY =============
 
 class CrazyPartyTypingInput(QLineEdit):
-    """Typing input for Crazy Party: Ctrl=repeat, Shift+Enter=exit, Ctrl+Enter=status."""
     def __init__(self, mode, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.mode = mode
 
     def keyPressEvent(self, event):
         # Ctrl alone: repeat target
-        if event.key() == Qt.Key_Control:
+        if event.key() == Qt.Key_Control and event.modifiers() == Qt.ControlModifier:
             self.mode.repeat_current_target()
             return
-
-        # Shift+Enter: exit confirmation dialog (universal for all modes)
-        if (event.key() in (Qt.Key_Return, Qt.Key_Enter)
-                and event.modifiers() & Qt.ShiftModifier):
+        # Shift+Enter: exit
+        if (event.key() in (Qt.Key_Return, Qt.Key_Enter) and event.modifiers() & Qt.ShiftModifier):
             self.mode._on_shift_enter()
             return
-
-        # Ctrl+Enter: show status in CrazyParty
-        if (event.key() in (Qt.Key_Return, Qt.Key_Enter)
-                and event.modifiers() & Qt.ControlModifier):
+        # Shift+Ctrl: status
+        if (event.key() == Qt.Key_Control and event.modifiers() & Qt.ShiftModifier):
             self.mode._announce_status()
             return
-
         # Any other key: interrupt TTS
         self.mode.on_typing_key_pressed()
         super().keyPressEvent(event)
 
 
 class CrazyParty(QWidget):
-    """
-    Endless high-reward grind mode.
-    100 XP ticket entry. Risk zone -> Safe zone at 100 XP earned.
-    5 hearts, danger 0-10, dynamic XP-per-correct multiplier.
-    Word targets deal 1% boss health damage on correct.
-    """
-
-    TICKET_COST     = 100
-    SAFE_ZONE_XP    = 100   # XP earned inside session to enter safe zone
-    WORD_INTERVAL   = 100   # roughly every N letter targets, show a word
+    TICKET_COST = 100
+    SAFE_ZONE_XP = 100
+    WORD_INTERVAL = 100
 
     def __init__(self, base_logic, is_english=True, parent=None):
         super().__init__()
         self.setWindowFlag(Qt.Window, True)
         self.setWindowModality(Qt.ApplicationModal)
-
-        self.base_logic       = base_logic
-        self.is_english       = is_english
+        self.base_logic = base_logic
+        self.is_english = is_english
         self.parent_challenge = parent
-
-        # Session state
-        self.current_hearts      = 5
-        self.current_danger      = 0
-        self.elapsed_seconds     = 0
-        self.current_target      = ""
-        self.target_count        = 0     # letter targets since last word
-        self.countdown_value     = 3
-
-        # Economy
-        self.session_xp_earned   = 0.0  # XP earned inside this run
-        self.ticket_refunded     = False
-        self.xp_per_correct      = 0.01
-        self.correct_streak      = 0
-        self.error_streak        = 0
-
-        # TTS
-        self._tts_waiting        = False
-        self._tts_timers         = []
-
+        self.current_hearts = 5
+        self.current_danger = 0
+        self.elapsed_seconds = 0
+        self.current_target = ""
+        self.target_count = 0
+        self.countdown_value = 3
+        self.session_xp_earned = 0.0
+        self.ticket_refunded = False
+        self.xp_per_correct = 0.01
+        self.correct_streak = 0
+        self.error_streak = 0
+        self._tts_waiting = False
+        self._tts_timers = []
+        self._closing = False
         self._build_ui()
         self._build_timers()
-
-    # ---- UI ----
 
     def _build_ui(self):
         self.setStyleSheet("""
@@ -2500,88 +2082,47 @@ class CrazyParty(QWidget):
                           color: #f9d342; border: 2px solid #f9d342;
                           border-radius: 10px; font-size: 28px; }
         """)
-
         root = QVBoxLayout()
         root.setSpacing(12)
-
-        # Zone status
         self.zone_label = AccessibleLabel(
             "RISK ZONE - Ticket not yet refunded",
             "Risk zone. Ticket not yet refunded. Earn 100 XP to enter safe zone."
         )
-        self.zone_label.setStyleSheet(
-            "padding: 10px; background-color: #3a0a0a; color: #e94560;"
-            "border: 2px solid #e94560; border-radius: 10px; font-size: 20px;"
-        )
+        self.zone_label.setStyleSheet("padding: 10px; background-color: #3a0a0a; color: #e94560; border: 2px solid #e94560; border-radius: 10px; font-size: 20px;")
         root.addWidget(self.zone_label)
-
-        # Stats row 1: hearts + danger
         row1 = QHBoxLayout()
         self.hearts_display = AccessibleLabel("Hearts: 5 / 5", "Hearts remaining: 5.")
         row1.addWidget(self.hearts_display)
         self.danger_display = AccessibleLabel("Danger: 0 / 10", "Danger: 0 out of 10.")
         row1.addWidget(self.danger_display)
         root.addLayout(row1)
-
-        # Stats row 2: session XP + elapsed time
         row2 = QHBoxLayout()
-        self.session_xp_label = AccessibleLabel(
-            "Session XP: 0",
-            "Session XP earned: 0."
-        )
+        self.session_xp_label = AccessibleLabel("Session XP: 0", "Session XP earned: 0.")
         row2.addWidget(self.session_xp_label)
         self.timer_label = AccessibleLabel("Time: 00:00", "Elapsed time: 0 seconds.")
         row2.addWidget(self.timer_label)
         root.addLayout(row2)
-
-        # XP per correct - most important stat
-        self.xpc_label = AccessibleLabel(
-            "XP/correct: 0.010",
-            "Current XP per correct answer: 0.010."
-        )
-        self.xpc_label.setStyleSheet(
-            "padding: 10px; background-color: #1a1a2e; color: #0fecb0;"
-            "border: 2px solid #0fecb0; border-radius: 10px; font-size: 26px;"
-        )
+        self.xpc_label = AccessibleLabel("XP/correct: 0.010", "Current XP per correct answer: 0.010.")
+        self.xpc_label.setStyleSheet("padding: 10px; background-color: #1a1a2e; color: #0fecb0; border: 2px solid #0fecb0; border-radius: 10px; font-size: 26px;")
         root.addWidget(self.xpc_label)
-
-        # Target display
         self.target_display = AccessibleLabel("", "Current target.")
-        self.target_display.setStyleSheet(
-            "padding: 12px; background-color: #1a1a2e; color: #f9d342;"
-            "border: 2px solid #f9d342; border-radius: 10px; font-size: 52px; min-height: 110px;"
-        )
+        self.target_display.setStyleSheet("padding: 12px; background-color: #1a1a2e; color: #f9d342; border: 2px solid #f9d342; border-radius: 10px; font-size: 52px; min-height: 110px;")
         root.addWidget(self.target_display)
-
-        # Countdown
         self.countdown_display = AccessibleLabel("", "Countdown.")
-        self.countdown_display.setStyleSheet(
-            "padding: 12px; background-color: #1a1a2e; color: #0fecb0;"
-            "border: 2px solid #0fecb0; border-radius: 10px; font-size: 72px; min-height: 120px;"
-        )
+        self.countdown_display.setStyleSheet("padding: 12px; background-color: #1a1a2e; color: #0fecb0; border: 2px solid #0fecb0; border-radius: 10px; font-size: 72px; min-height: 120px;")
         self.countdown_display.setVisible(False)
         root.addWidget(self.countdown_display)
-
-        # Typing input
         self.input_field = CrazyPartyTypingInput(self)
-        self.input_field.setAccessibleName(
-            "Typing field." if self.is_english else "Champ de saisie."
-        )
+        self.input_field.setAccessibleName("Typing field." if self.is_english else "Champ de saisie.")
         self.input_field.textChanged.connect(self._on_input_changed)
         root.addWidget(self.input_field)
-
-        # Help hint
-        hint = (
-            "Ctrl: repeat target  |  Shift+Enter: exit  |  Ctrl+Enter: status"
-            if self.is_english else
-            "Ctrl: repeter  |  Maj+Entree: quitter  |  Ctrl+Entree: statut"
-        )
+        hint = ("Ctrl: repeat target | Shift+Ctrl: status | Shift+Enter: exit" if self.is_english else "Ctrl: repeter | Maj+Ctrl: statut | Maj+Entree: quitter")
         hint_lbl = AccessibleLabel(hint, hint)
-        hint_lbl.setStyleSheet(
-            "padding: 6px; background: transparent; color: #888; border: none; font-size: 15px;"
-        )
+        hint_lbl.setStyleSheet("padding: 6px; background: transparent; color: #888; border: none; font-size: 15px;")
         root.addWidget(hint_lbl)
-
+        quit_btn = AccessiblePushButton("Quit" if self.is_english else "Quitter")
+        quit_btn.clicked.connect(self._on_shift_enter)
+        root.addWidget(quit_btn)
         root.addStretch()
         self.setLayout(root)
 
@@ -2589,31 +2130,23 @@ class CrazyParty(QWidget):
         self.session_timer = QTimer(self)
         self.session_timer.setInterval(1000)
         self.session_timer.timeout.connect(self._on_session_tick)
-
         self.target_timer = QTimer(self)
         self.target_timer.setSingleShot(True)
         self.target_timer.timeout.connect(self._on_target_timeout)
-
         self.countdown_timer = QTimer(self)
         self.countdown_timer.setInterval(1000)
         self.countdown_timer.timeout.connect(self._on_countdown_tick)
-
-    # ---- Entry ----
 
     def start_session(self):
         if not self._show_welcome():
             self.close()
             return
-
-        # Deduct ticket
         logic = getattr(self.parent_challenge, 'logic', None)
         xp_src = logic if logic else self.base_logic
         if xp_src.xp_balance < self.TICKET_COST:
             self._show_dialog(
                 "Not enough XP",
-                "You need 100 XP to enter Crazy Party."
-                if self.is_english else
-                "Vous avez besoin de 100 XP pour entrer dans la Fete Folle.",
+                "You need 100 XP to enter Crazy Party." if self.is_english else "Vous avez besoin de 100 XP pour entrer dans la Fete Folle.",
                 [("OK", None)]
             )
             self.close()
@@ -2621,39 +2154,34 @@ class CrazyParty(QWidget):
         xp_src.xp_balance -= self.TICKET_COST
         if logic:
             logic.save_progress()
-
         self._reset_state()
         self.setWindowState(Qt.WindowMaximized)
         self.raise_()
         self.activateWindow()
-
-        # Countdown
         self.countdown_display.setVisible(True)
         self.countdown_display.update_text(str(self.countdown_value), f"Countdown: {self.countdown_value}.")
         self.countdown_timer.start()
         self.input_field.setFocus()
 
     def _reset_state(self):
-        self.current_hearts    = 5
-        self.current_danger    = 0
-        self.elapsed_seconds   = 0
-        self.current_target    = ""
-        self.target_count      = 0
+        self.current_hearts = 5
+        self.current_danger = 0
+        self.elapsed_seconds = 0
+        self.current_target = ""
+        self.target_count = 0
         self.session_xp_earned = 0.0
-        self.ticket_refunded   = False
-        self.xp_per_correct    = 0.01
-        self.correct_streak    = 0
-        self.error_streak      = 0
-        self._tts_waiting      = False
+        self.ticket_refunded = False
+        self.xp_per_correct = 0.01
+        self.correct_streak = 0
+        self.error_streak = 0
+        self._tts_waiting = False
         self._clear_tts()
         self.session_timer.stop()
         self.target_timer.stop()
         self.countdown_timer.stop()
-        self.countdown_value   = 3
+        self.countdown_value = 3
         self.input_field.clear()
         self._refresh_display()
-
-    # ---- Welcome ----
 
     def _show_welcome(self):
         dlg = QDialog(self)
@@ -2662,17 +2190,9 @@ class CrazyParty(QWidget):
         dlg.setMinimumWidth(600)
         dlg.setStyleSheet(self.styleSheet())
         layout = QVBoxLayout()
-
-        title = AccessibleLabel(
-            "CRAZY KEYBOARD PARTY",
-            "Crazy Keyboard Party - welcome screen"
-        )
-        title.setStyleSheet(
-            "font-size: 26px; font-weight: bold; color: #0fecb0;"
-            "background: transparent; border: none; padding: 6px;"
-        )
+        title = AccessibleLabel("CRAZY KEYBOARD PARTY", "Crazy Keyboard Party - welcome screen")
+        title.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background: transparent; border: none; padding: 6px;")
         layout.addWidget(title)
-
         if self.is_english:
             desc = (
                 "ENTRY COST: 100 XP ticket.\n\n"
@@ -2686,11 +2206,12 @@ class CrazyParty(QWidget):
                 "- Wrong answer: +1 danger. Timeout: +2 danger.\n"
                 "- Danger 10: lose a heart, danger resets, 4-second beep, 5-second pause.\n\n"
                 "XP PER CORRECT: Starts at 0.010 per correct answer.\n"
-                "- 5 correct in a row: doubles the multiplier.\n"
-                "- Error or timeout: divides by 2.\n\n"
+                "- 5 correct in a row: doubles the multiplier (max 2.0).\n"
+                "- One incorrect: subtracts current XP/correct from session XP (no halving).\n"
+                "- Two consecutive incorrects OR a timeout: halves the multiplier.\n\n"
                 "WORD TARGETS: Occasional words appear. Type one correctly to deal "
                 "1% boss health damage. Incorrect words do nothing special.\n\n"
-                "Ctrl: repeat target. Shift+Enter: exit. Ctrl+Enter: show status.\n\n"
+                "Ctrl: repeat target. Shift+Ctrl: status. Shift+Enter: exit.\n\n"
                 "This is the highest-reward mode. Play for as long as you survive!"
             )
         else:
@@ -2705,19 +2226,18 @@ class CrazyParty(QWidget):
                 "- 5 coeurs. Jauge de danger 0-10.\n"
                 "- Mauvaise reponse : +1 danger. Delai : +2 danger.\n"
                 "- Danger 10 : perdre un coeur, danger remis a 0, bip 4 secondes, pause 5 secondes.\n\n"
-                "XP PAR CORRECT : Commence a 0,010 par bonne reponse.\n"
-                "- 5 bonnes de suite : double le multiplicateur.\n"
-                "- Erreur ou delai : divise par 2.\n\n"
+                "XP PAR CORRECT : Commence a 0,010.\n"
+                "- 5 bonnes de suite : double le multiplicateur (max 2,0).\n"
+                "- Une erreur : soustrait la valeur actuelle de XP/correct des XP de session (pas de division).\n"
+                "- Deux erreurs consecutives OU un delai : divise le multiplicateur par deux.\n\n"
                 "CIBLES MOT : Des mots apparaissent parfois. Tapez-en un correctement "
                 "pour infliger 1% de degats au boss. Un mot incorrect ne fait rien de special.\n\n"
-                "Ctrl : repeter. Maj+Entree : quitter. Ctrl+Entree : statut.\n\n"
+                "Ctrl : repeter. Maj+Ctrl : statut. Maj+Entree : quitter.\n\n"
                 "C'est le mode le plus rentable. Jouez aussi longtemps que vous survivez !"
             )
-
         browser = AccessibleBrowser(desc, desc)
         browser.setMinimumHeight(480)
         layout.addWidget(browser)
-
         btn_row = QHBoxLayout()
         btn_yes = AccessiblePushButton("I'm ready for it!" if self.is_english else "Je suis pret(e) !")
         btn_yes.clicked.connect(dlg.accept)
@@ -2726,18 +2246,13 @@ class CrazyParty(QWidget):
         btn_no.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_no)
         layout.addLayout(btn_row)
-
         dlg.setLayout(layout)
         return dlg.exec_() == QDialog.Accepted
-
-    # ---- Countdown ----
 
     def _on_countdown_tick(self):
         self.countdown_value -= 1
         if self.countdown_value > 0:
-            self.countdown_display.update_text(
-                str(self.countdown_value), f"Countdown: {self.countdown_value}."
-            )
+            self.countdown_display.update_text(str(self.countdown_value), f"Countdown: {self.countdown_value}.")
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(str(self.countdown_value))
             return
@@ -2747,60 +2262,25 @@ class CrazyParty(QWidget):
         self._next_target()
         self.input_field.setFocus()
 
-    # ---- Session tick ----
-
     def _on_session_tick(self):
         self.elapsed_seconds += 1
         self._refresh_display()
 
-    # ---- Display ----
-
     def _refresh_display(self):
         m = self.elapsed_seconds // 60
         s = self.elapsed_seconds % 60
-        self.timer_label.update_text(
-            f"Time: {m:02d}:{s:02d}",
-            f"Elapsed time: {m} minutes {s} seconds."
-        )
-        self.hearts_display.update_text(
-            f"Hearts: {self.current_hearts} / 5",
-            f"Hearts remaining: {self.current_hearts} out of 5."
-        )
-        self.danger_display.update_text(
-            f"Danger: {self.current_danger} / 10",
-            f"Danger level: {self.current_danger} out of 10."
-        )
-        self.session_xp_label.update_text(
-            f"Session XP: {self.session_xp_earned:.1f}",
-            f"Session XP earned: {self.session_xp_earned:.1f}."
-        )
-        self.xpc_label.update_text(
-            f"XP/correct: {self.xp_per_correct:.3f}",
-            f"Current XP per correct: {self.xp_per_correct:.3f}."
-        )
-
-        # Zone label
+        self.timer_label.update_text(f"Time: {m:02d}:{s:02d}", f"Elapsed time: {m} minutes {s} seconds.")
+        self.hearts_display.update_text(f"Hearts: {self.current_hearts} / 5", f"Hearts remaining: {self.current_hearts} out of 5.")
+        self.danger_display.update_text(f"Danger: {self.current_danger} / 10", f"Danger level: {self.current_danger} out of 10.")
+        self.session_xp_label.update_text(f"Session XP: {self.session_xp_earned:.1f}", f"Session XP earned: {self.session_xp_earned:.1f}.")
+        self.xpc_label.update_text(f"XP/correct: {self.xp_per_correct:.3f}", f"Current XP per correct: {self.xp_per_correct:.3f}.")
         if self.ticket_refunded:
-            self.zone_label.update_text(
-                "SAFE ZONE - Ticket refunded!",
-                "Safe zone. Your ticket has been refunded. All rewards are kept."
-            )
-            self.zone_label.setStyleSheet(
-                "padding: 10px; background-color: #0a2a0a; color: #0fecb0;"
-                "border: 2px solid #0fecb0; border-radius: 10px; font-size: 20px;"
-            )
+            self.zone_label.update_text("SAFE ZONE - Ticket refunded!", "Safe zone. Your ticket has been refunded. All rewards are kept.")
+            self.zone_label.setStyleSheet("padding: 10px; background-color: #0a2a0a; color: #0fecb0; border: 2px solid #0fecb0; border-radius: 10px; font-size: 20px;")
         else:
             needed = self.SAFE_ZONE_XP - self.session_xp_earned
-            self.zone_label.update_text(
-                f"RISK ZONE - Earn {needed:.0f} more XP to reach safe zone",
-                f"Risk zone. Earn {needed:.0f} more XP to recover your ticket."
-            )
-            self.zone_label.setStyleSheet(
-                "padding: 10px; background-color: #3a0a0a; color: #e94560;"
-                "border: 2px solid #e94560; border-radius: 10px; font-size: 20px;"
-            )
-
-    # ---- Target generation ----
+            self.zone_label.update_text(f"RISK ZONE - Earn {needed:.0f} more XP to reach safe zone", f"Risk zone. Earn {needed:.0f} more XP to recover your ticket.")
+            self.zone_label.setStyleSheet("padding: 10px; background-color: #3a0a0a; color: #e94560; border: 2px solid #e94560; border-radius: 10px; font-size: 20px;")
 
     def _is_word_turn(self):
         return self.target_count > 0 and self.target_count % self.WORD_INTERVAL == 0
@@ -2810,7 +2290,7 @@ class CrazyParty(QWidget):
             return random.choice(w6words)
         lowercase = "abcdefghijklmnopqrstuvwxyz"
         uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        symbols   = "".join(symbol_pronounciation.keys())
+        symbols = "".join(symbol_pronounciation.keys())
         pool = lowercase * 15 + uppercase * 5 + symbols * 2
         return random.choice(pool)
 
@@ -2818,7 +2298,7 @@ class CrazyParty(QWidget):
         n = len(target)
         if n == 1:
             if target in symbol_pronounciation: return 3800
-            if target.isupper():                return 3200
+            if target.isupper(): return 3200
             return 2200
         return 5000 + n * 600
 
@@ -2829,22 +2309,16 @@ class CrazyParty(QWidget):
             return f"{char.lower()} majuscule"
         return char
 
-    # ---- Target lifecycle ----
-
     def _next_target(self):
         self.target_timer.stop()
         self._clear_tts()
         self._tts_waiting = False
-
         self.target_count += 1
         self.current_target = self._generate_target()
-
-        self.input_field.blockSignals(True)
+        self.input_field.textChanged.disconnect(self._on_input_changed)
         self.input_field.clear()
-        self.input_field.blockSignals(False)
-
+        self.input_field.textChanged.connect(self._on_input_changed)
         is_word = len(self.current_target) > 1 and self.current_target[0].isalpha()
-
         if is_word:
             ann = self.current_target
             spelled = ", ".join(self._get_pronunciation(c) for c in self.current_target)
@@ -2872,7 +2346,6 @@ class CrazyParty(QWidget):
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(ann)
             self.target_timer.start(self._get_timeout_ms(self.current_target))
-
         self.input_field.setFocus()
 
     def _pause_timers(self):
@@ -2900,8 +2373,7 @@ class CrazyParty(QWidget):
             spelled = ", ".join(self._get_pronunciation(c) for c in self.current_target)
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(self.current_target)
-                QTimer.singleShot(600, lambda: self.base_logic.speaker.output(spelled)
-                                   if self.base_logic.speaker else None)
+                QTimer.singleShot(600, lambda: self.base_logic.speaker.output(spelled) if self.base_logic.speaker else None)
             resume_t = QTimer(self)
             resume_t.setSingleShot(True)
             resume_t.timeout.connect(self._resume_timers)
@@ -2913,7 +2385,6 @@ class CrazyParty(QWidget):
                 self.base_logic.speaker.output(ann)
 
     def on_typing_key_pressed(self):
-        """Any non-special key: stop TTS and resume timers immediately."""
         if self._tts_waiting:
             self._clear_tts()
             self._resume_timers()
@@ -2923,24 +2394,17 @@ class CrazyParty(QWidget):
             t.stop()
         self._tts_timers.clear()
 
-    # ---- Input ----
-
     def _on_input_changed(self, text):
         if not self.current_target:
             return
-
         is_word = len(self.current_target) > 1 and self.current_target[0].isalpha()
-
         if is_word:
-            # Prefix match for words
             if self.current_target.startswith(text):
                 if text == self.current_target:
                     self._on_correct_word()
                 return
-            # Wrong
             self._on_incorrect()
         else:
-            # Single char: first keypress decides
             if text == self.current_target:
                 self._on_correct_letter()
             else:
@@ -2950,17 +2414,12 @@ class CrazyParty(QWidget):
         self.target_timer.stop()
         winsound.Beep(1500, 100)
         self.correct_streak += 1
-        self.error_streak    = 0
-
-        # Earn XP
+        self.error_streak = 0
         xp_gained = round(self.xp_per_correct, 3)
         self.session_xp_earned = round(self.session_xp_earned + xp_gained, 3)
-
-        # Streak doubling
         if self.correct_streak >= 5:
-            self.xp_per_correct = round(min(self.xp_per_correct * 2, 10.0), 3)
+            self.xp_per_correct = round(min(self.xp_per_correct * 2, 2.0), 3)
             self.correct_streak = 0
-
         self._check_safe_zone()
         self._refresh_display()
         if not self.session_timer.isActive():
@@ -2973,20 +2432,13 @@ class CrazyParty(QWidget):
         self.target_timer.stop()
         self._tts_waiting = False
         winsound.Beep(1500, 150)
-
-        # Boss damage: 1% per correct word
         logic = getattr(self.parent_challenge, 'logic', None)
         if logic:
             logic.boss_health = max(0, logic.boss_health - 1)
             if self.base_logic.speaker:
-                self.base_logic.speaker.output(
-                    "Word correct! 1% boss damage."
-                    if self.is_english else
-                    "Mot correct ! 1% de degats au boss."
-                )
-
+                self.base_logic.speaker.output("Word correct! 1% boss damage." if self.is_english else "Mot correct ! 1% de degats au boss.")
         self.correct_streak += 1
-        self.error_streak    = 0
+        self.error_streak = 0
         self._check_safe_zone()
         self._refresh_display()
         if not self.session_timer.isActive():
@@ -2999,64 +2451,51 @@ class CrazyParty(QWidget):
         self.target_timer.stop()
         self._tts_waiting = False
         winsound.Beep(400, 200)
-
-        self.error_streak   += 1
-        self.correct_streak  = 0
-        # Divide xp_per_correct by 2 for each error
-        self.xp_per_correct = round(max(self.xp_per_correct / 2, 0.001), 3)
-
+        penalty = round(self.xp_per_correct, 3)
+        self.session_xp_earned = round(max(0, self.session_xp_earned - penalty), 3)
+        self.error_streak += 1
+        self.correct_streak = 0
+        if self.error_streak >= 2:
+            self.xp_per_correct = round(max(self.xp_per_correct / 2, 0.001), 3)
+            self.error_streak = 0
         self.input_field.blockSignals(True)
         self.input_field.clear()
         self.input_field.blockSignals(False)
-
         self._apply_danger(1)
 
     def _on_target_timeout(self):
         winsound.Beep(600, 300)
-        self.error_streak   += 1
-        self.correct_streak  = 0
+        penalty = round(self.xp_per_correct, 3)
+        self.session_xp_earned = round(max(0, self.session_xp_earned - penalty), 3)
         self.xp_per_correct = round(max(self.xp_per_correct / 2, 0.001), 3)
+        self.error_streak = 0
+        self.correct_streak = 0
         self._apply_danger(2)
-
-    # ---- Danger and hearts ----
 
     def _apply_danger(self, amount):
         self._clear_tts()
         self.target_timer.stop()
         self._tts_waiting = False
-
         self.current_danger = min(10, self.current_danger + amount)
         self._refresh_display()
-
         if self.current_danger >= 10:
             self.current_danger = 0
             self.current_hearts -= 1
             self._refresh_display()
-
-            winsound.Beep(200, 4000)   # deep 4-second beep
+            winsound.Beep(200, 4000)
             self.session_timer.stop()
             self.input_field.setEnabled(False)
-
             if self.current_hearts <= 0:
                 if self.ticket_refunded:
-                    # Died in safe zone = success
                     QTimer.singleShot(5000, lambda: self._end_session(success=True))
                 else:
                     QTimer.singleShot(5000, lambda: self._end_session(success=False))
                 return
-
-            ann = (
-                f"Heart lost. {self.current_hearts} remaining."
-                if self.is_english else
-                f"Coeur perdu. {self.current_hearts} restant."
-            )
+            ann = (f"Heart lost. {self.current_hearts} remaining." if self.is_english else f"Coeur perdu. {self.current_hearts} restant.")
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(ann)
-
             QTimer.singleShot(5000, self._resume_after_heart_loss)
             return
-
-        # No heart lost - resume immediately
         if not self.session_timer.isActive():
             self.session_timer.start()
         self._next_target()
@@ -3069,47 +2508,30 @@ class CrazyParty(QWidget):
         self._next_target()
         self.input_field.setFocus()
 
-    # ---- Safe zone ----
-
     def _check_safe_zone(self):
         if not self.ticket_refunded and self.session_xp_earned >= self.SAFE_ZONE_XP:
             self.ticket_refunded = True
             if self.base_logic.speaker:
-                msg = (
-                    "Safe zone reached! Ticket refunded. Keep earning!"
-                    if self.is_english else
-                    "Zone sure atteinte ! Billet rembourse. Continuez !"
-                )
+                msg = ("Safe zone reached! Ticket refunded. Keep earning!" if self.is_english else "Zone sure atteinte ! Billet rembourse. Continuez !")
                 self.base_logic.speaker.output(msg)
 
-    # ---- Shortcuts ----
-
     def _announce_status(self):
-        """Ctrl+Enter: announce hearts and danger with delay."""
-        msg = (
-            f"Hearts: {self.current_hearts}. Danger: {self.current_danger}."
-            if self.is_english else
-            f"Coeurs : {self.current_hearts}. Danger : {self.current_danger}."
-        )
+        msg = (f"Hearts: {self.current_hearts}. Danger: {self.current_danger}." if self.is_english else f"Coeurs : {self.current_hearts}. Danger : {self.current_danger}.")
         if self.base_logic.speaker:
             self.base_logic.speaker.output(msg)
 
     def _on_shift_enter(self):
-        """Shift+Enter: exit confirmation dialog. Calls the same logic as _on_ctrl_q."""
         self._on_ctrl_q()
 
     def _on_ctrl_q(self):
-        """Ctrl+Q: exit confirmation dialog. Logic differs per zone."""
         self.session_timer.stop()
         self.target_timer.stop()
-
         dlg = QDialog(self)
         dlg.setWindowTitle("Exit?" if self.is_english else "Quitter ?")
         dlg.setWindowModality(Qt.ApplicationModal)
         dlg.setMinimumWidth(560)
         dlg.setStyleSheet(self.styleSheet())
         layout = QVBoxLayout()
-
         if self.ticket_refunded:
             if self.is_english:
                 msg_text = (
@@ -3148,20 +2570,17 @@ class CrazyParty(QWidget):
                     "- Degats au boss deja infliges conserves\n\n"
                     "Quitter quand meme ?"
                 )
-
         msg = AccessibleBrowser(text=msg_text, accessible_text=msg_text)
         layout.addWidget(msg)
-
         btn_row = QHBoxLayout()
         btn_yes = AccessiblePushButton("Yes, exit" if self.is_english else "Oui, quitter")
-        btn_no  = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
+        btn_no = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
         btn_yes.clicked.connect(dlg.accept)
         btn_no.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_yes)
         btn_row.addWidget(btn_no)
         layout.addLayout(btn_row)
         dlg.setLayout(layout)
-
         if dlg.exec_() == QDialog.Accepted:
             self._exit_session()
         else:
@@ -3169,131 +2588,71 @@ class CrazyParty(QWidget):
                 self.session_timer.start()
             self.target_timer.start(self._get_timeout_ms(self.current_target))
 
-    # ---- Session end ----
-
     def _exit_session(self):
-        """User chose to exit via Ctrl+Q confirm."""
         self._clear_tts()
         self.session_timer.stop()
         self.target_timer.stop()
-
         logic = getattr(self.parent_challenge, 'logic', None)
         xp_src = logic if logic else self.base_logic
-
         if self.ticket_refunded:
-            # Refund ticket + keep all safe-zone XP
             final_xp = int(self.session_xp_earned)
             if logic:
                 logic.add_xp(final_xp)
         else:
-            # Lose ticket, halve session XP
             final_xp = int(self.session_xp_earned // 2)
             if logic:
                 logic.add_xp(final_xp)
-
         if logic:
             logic.save_progress()
             if self.parent_challenge:
                 self.parent_challenge.update_display()
-
         if self.is_english:
-            msg_text = (
-                f"Session ended.\n\nXP credited: {final_xp}\n"
-                f"{'Ticket refunded.' if self.ticket_refunded else 'Ticket lost.'}"
-            )
+            msg_text = f"Session ended.\n\nXP credited: {final_xp}\n{'Ticket refunded.' if self.ticket_refunded else 'Ticket lost.'}"
         else:
-            msg_text = (
-                f"Session terminee.\n\nXP credites : {final_xp}\n"
-                f"{'Billet rembourse.' if self.ticket_refunded else 'Billet perdu.'}"
-            )
-
-        self._show_dialog(
-            "Session Ended" if self.is_english else "Session Terminee",
-            msg_text,
-            [("OK", None)]
-        )
+            msg_text = f"Session terminee.\n\nXP credites : {final_xp}\n{'Billet rembourse.' if self.ticket_refunded else 'Billet perdu.'}"
+        self._show_dialog("Session Ended" if self.is_english else "Session Terminee", msg_text, [("OK", None)])
         self._return_to_battle()
 
     def _end_session(self, success):
-        """Called when all hearts are lost."""
         self._clear_tts()
         self.session_timer.stop()
         self.target_timer.stop()
-
         logic = getattr(self.parent_challenge, 'logic', None)
-
         if success:
-            # Died in safe zone - apply full rewards
             final_xp = int(self.session_xp_earned)
             if logic:
                 logic.add_xp(final_xp)
                 mode = logic.modes.get('crazy_party')
                 if mode and not mode.get('completed'):
-                    mode['status']    = 'done'
+                    mode['status'] = 'done'
                     mode['completed'] = True
-                    logic.completed_modes_count = sum(
-                        1 for v in logic.modes.values() if v['completed']
-                    )
+                    logic.completed_modes_count = sum(1 for v in logic.modes.values() if v['completed'])
                 logic.save_progress()
-
             if self.is_english:
-                msg_text = (
-                    f"You reached the safe zone and fought until the end!\n\n"
-                    f"XP credited: {final_xp}\n"
-                    f"Boss damage from words applied.\n\n"
-                    f"Well done!"
-                )
+                msg_text = f"You reached the safe zone and fought until the end!\n\nXP credited: {final_xp}\nBoss damage from words applied.\n\nWell done!"
             else:
-                msg_text = (
-                    f"Vous avez atteint la zone sure et combattu jusqu'au bout !\n\n"
-                    f"XP credites : {final_xp}\n"
-                    f"Degats au boss des mots appliques.\n\n"
-                    f"Bravo !"
-                )
-            self._show_dialog(
-                "Success!" if self.is_english else "Succes !",
-                msg_text,
-                [("Return to Battle" if self.is_english else "Retour au Combat", None)]
-            )
+                msg_text = f"Vous avez atteint la zone sure et combattu jusqu'au bout !\n\nXP credites : {final_xp}\nDegats au boss des mots appliques.\n\nBravo !"
+            self._show_dialog("Success!" if self.is_english else "Succes !", msg_text, [("Return to Battle" if self.is_english else "Retour au Combat", None)])
         else:
-            # Died in risk zone
             final_xp = int(self.session_xp_earned // 2)
             if logic:
                 logic.add_xp(final_xp)
                 logic.save_progress()
-
             m = self.elapsed_seconds // 60
             s = self.elapsed_seconds % 60
             if self.is_english:
-                msg_text = (
-                    f"All hearts lost in the risk zone.\n\n"
-                    f"Time survived: {m:02d}:{s:02d}\n"
-                    f"Ticket lost. Session XP halved.\n"
-                    f"XP credited: {final_xp}"
-                )
+                msg_text = f"All hearts lost in the risk zone.\n\nTime survived: {m:02d}:{s:02d}\nTicket lost. Session XP halved.\nXP credited: {final_xp}"
             else:
-                msg_text = (
-                    f"Tous les coeurs perdus en zone risquee.\n\n"
-                    f"Temps survecu : {m:02d}:{s:02d}\n"
-                    f"Billet perdu. XP de session divisee par deux.\n"
-                    f"XP credites : {final_xp}"
-                )
-            self._show_dialog(
-                "Defeated" if self.is_english else "Vaincu",
-                msg_text,
-                [("Retry" if self.is_english else "Recommencer",
-                  self._retry),
-                 ("Return to Battle" if self.is_english else "Retour au Combat",
-                  None)]
-            )
-
+                msg_text = f"Tous les coeurs perdus en zone risquee.\n\nTemps survecu : {m:02d}:{s:02d}\nBillet perdu. XP de session divisee par deux.\nXP credites : {final_xp}"
+            self._show_dialog("Defeated" if self.is_english else "Vaincu", msg_text,
+                              [("Retry" if self.is_english else "Recommencer", self._retry),
+                               ("Return to Battle" if self.is_english else "Retour au Combat", None)])
         if self.parent_challenge:
             self.parent_challenge.update_display()
         self._return_to_battle()
 
     def _retry(self):
         self._return_to_battle()
-        # Relaunch via parent
         if self.parent_challenge:
             self.parent_challenge._start_crazy_party()
 
@@ -3302,29 +2661,19 @@ class CrazyParty(QWidget):
             self.parent_challenge.pages.setCurrentIndex(1)
         self.close()
 
-    # ---- Generic dialog helper ----
-
     def _show_dialog(self, title, message, buttons):
-        """Utility: show a modal dialog with given message and buttons.
-        buttons is a list of (label, callback) pairs. callback=None just closes."""
         dlg = QDialog(self)
         dlg.setWindowTitle(title)
         dlg.setWindowModality(Qt.ApplicationModal)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
         layout = QVBoxLayout()
-
         title_lbl = AccessibleLabel(title, title)
-        title_lbl.setStyleSheet(
-            "font-size: 24px; font-weight: bold; color: #0fecb0;"
-            "background: transparent; border: none; padding: 4px;"
-        )
+        title_lbl.setStyleSheet("font-size: 24px; font-weight: bold; color: #0fecb0; background: transparent; border: none; padding: 4px;")
         layout.addWidget(title_lbl)
-
         browser = AccessibleBrowser(message, message)
         browser.setMinimumHeight(200)
         layout.addWidget(browser)
-
         btn_row = QHBoxLayout()
         for label, cb in buttons:
             btn = AccessiblePushButton(label)
@@ -3334,35 +2683,31 @@ class CrazyParty(QWidget):
                 btn.clicked.connect(dlg.accept)
             btn_row.addWidget(btn)
         layout.addLayout(btn_row)
-
         dlg.setLayout(layout)
         dlg.exec_()
 
     def closeEvent(self, event):
-        self._clear_tts()
-        self.session_timer.stop()
-        self.target_timer.stop()
-        self.countdown_timer.stop()
-        super().closeEvent(event)
+        if self._closing:
+            event.accept()
+            return
+        if not self.session_timer.isActive() and not self.target_timer.isActive():
+            event.accept()
+            return
+        self._closing = True
+        self._on_ctrl_q()
+        event.ignore()
 
 
 # ============= WEEK 6 LOGIC =============
 
 class Week6Logic:
-    """
-    Logic layer for Week 6 challenge.
-    Manages XP, boss health, rank, mode progression, CSV persistence.
-    """
-
     def __init__(self, base_logic, user_name="", is_english=True):
-        self.base_logic  = base_logic
-        self.user_name   = user_name
-        self.is_english  = is_english
-
-        self.xp_balance  = 50
-        self.xp_max      = 1500
+        self.base_logic = base_logic
+        self.user_name = user_name
+        self.is_english = is_english
+        self.xp_balance = 50
+        self.xp_max = 1500
         self.boss_health = 100
-
         self.modes = {
             "warmup":      {"name": "Warmup Gate",          "status": "open",   "completed": False},
             "combo":       {"name": "Combo Rush",           "status": "locked", "completed": False},
@@ -3371,24 +2716,22 @@ class Week6Logic:
             "survival":    {"name": "Survival Gate",        "status": "locked", "completed": False},
             "crazy_party": {"name": "Crazy Keyboard Party", "status": "locked", "completed": False},
         }
-
         self.completed_modes_count = 0
-        self.csv_file_path         = None
-        self.progress_loaded       = False
-
+        self.csv_file_path = None
+        self.progress_loaded = False
         self.load_progress()
 
     def get_rank_from_xp(self):
         if self.is_english:
-            if self.xp_balance < 300:  return "Beginner"
-            if self.xp_balance < 600:  return "Challenger"
-            if self.xp_balance < 900:  return "Elite Typer"
+            if self.xp_balance < 300: return "Beginner"
+            if self.xp_balance < 600: return "Challenger"
+            if self.xp_balance < 900: return "Elite Typer"
             if self.xp_balance < 1200: return "Warrior"
             return "Master"
         else:
-            if self.xp_balance < 300:  return "Débutant"
-            if self.xp_balance < 600:  return "Challenger"
-            if self.xp_balance < 900:  return "Typer Élite"
+            if self.xp_balance < 300: return "Débutant"
+            if self.xp_balance < 600: return "Challenger"
+            if self.xp_balance < 900: return "Typer Élite"
             if self.xp_balance < 1200: return "Guerrier"
             return "Maître"
 
@@ -3399,7 +2742,7 @@ class Week6Logic:
         mode = self.modes[mode_key]
         if mode["status"] == "done" or mode["completed"]:
             return
-        mode["status"]    = "done"
+        mode["status"] = "done"
         mode["completed"] = True
         self.completed_modes_count += 1
         if self.completed_modes_count >= 1:
@@ -3413,18 +2756,14 @@ class Week6Logic:
     def get_mode_status_text(self, mode_key):
         mode = self.modes[mode_key]
         if self.is_english:
-            if mode["completed"]:    return "[completed]  -  Press to replay"
+            if mode["completed"]: return "[completed]  -  Press to replay"
             if mode["status"] == "locked":
-                return ("[locked]  -  Finish all modes above to unlock"
-                        if mode_key == "crazy_party" else
-                        "[locked]  -  Complete Warmup Gate to unlock")
+                return ("[locked]  -  Finish all modes above to unlock" if mode_key == "crazy_party" else "[locked]  -  Complete Warmup Gate to unlock")
             return "[open]  -  Press Enter to start"
         else:
-            if mode["completed"]:    return "[complété]  -  Appuyez pour rejouer"
+            if mode["completed"]: return "[complété]  -  Appuyez pour rejouer"
             if mode["status"] == "locked":
-                return ("[verrouillé]  -  Terminez les modes au-dessus pour déverrouiller"
-                        if mode_key == "crazy_party" else
-                        "[verrouillé]  -  Terminez le Warmup Gate pour déverrouiller")
+                return ("[verrouillé]  -  Terminez les modes au-dessus pour déverrouiller" if mode_key == "crazy_party" else "[verrouillé]  -  Terminez le Warmup Gate pour déverrouiller")
             return "[ouvert]  -  Appuyez Entrée pour commencer"
 
     def is_challenge_complete(self):
@@ -3436,10 +2775,7 @@ class Week6Logic:
         clean_name = self.base_logic.get_clean_username()
         if not clean_name:
             return
-        csv_path = os.path.join(
-            self.base_logic.data_dir, clean_name,
-            f"{clean_name}_Week6_Challenge.csv"
-        )
+        csv_path = os.path.join(self.base_logic.data_dir, clean_name, f"{clean_name}_Week6_Challenge.csv")
         if not os.path.exists(csv_path):
             return
         try:
@@ -3449,16 +2785,12 @@ class Week6Logic:
                     last_row = row
             if last_row is None:
                 return
-            self.xp_balance  = int(float(last_row["XP Balance"]))
+            self.xp_balance = int(float(last_row["XP Balance"]))
             self.boss_health = int(float(last_row["Boss Health"]))
-            completed_str    = last_row.get("Completed Modes", "none").strip()
-            completed_keys   = (
-                [k.strip() for k in completed_str.split(",")
-                 if k.strip() in self.modes]
-                if completed_str.lower() != "none" else []
-            )
+            completed_str = last_row.get("Completed Modes", "none").strip()
+            completed_keys = [k.strip() for k in completed_str.split(",") if k.strip() in self.modes] if completed_str.lower() != "none" else []
             for mk in completed_keys:
-                self.modes[mk]["status"]    = "done"
+                self.modes[mk]["status"] = "done"
                 self.modes[mk]["completed"] = True
             self.completed_modes_count = len(completed_keys)
             if self.completed_modes_count >= 1:
@@ -3468,7 +2800,7 @@ class Week6Logic:
             if self.completed_modes_count >= 5:
                 if not self.modes["crazy_party"]["completed"]:
                     self.modes["crazy_party"]["status"] = "unlocked"
-            self.csv_file_path   = csv_path
+            self.csv_file_path = csv_path
             self.progress_loaded = True
         except Exception:
             pass
@@ -3477,25 +2809,17 @@ class Week6Logic:
         if not self.user_name:
             return
         clean_name = self.base_logic.get_clean_username()
-        user_dir   = os.path.join(self.base_logic.data_dir, clean_name)
+        user_dir = os.path.join(self.base_logic.data_dir, clean_name)
         os.makedirs(user_dir, exist_ok=True)
-        self.csv_file_path = os.path.join(
-            user_dir, f"{clean_name}_Week6_Challenge.csv"
-        )
+        self.csv_file_path = os.path.join(user_dir, f"{clean_name}_Week6_Challenge.csv")
         file_exists = os.path.exists(self.csv_file_path)
         try:
             with open(self.csv_file_path, 'a', newline='', encoding='utf-8') as f:
                 w = csv.writer(f)
                 if not file_exists:
-                    w.writerow(["Timestamp", "XP Balance", "Boss Health",
-                                "Completed Modes", "Modes Status"])
+                    w.writerow(["Timestamp", "XP Balance", "Boss Health", "Completed Modes", "Modes Status"])
                 completed = [k for k, v in self.modes.items() if v["completed"]]
-                w.writerow([
-                    time.strftime("%Y-%m-%d %H:%M:%S"),
-                    self.xp_balance, self.boss_health,
-                    ",".join(completed) if completed else "none",
-                    str(self.modes),
-                ])
+                w.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), self.xp_balance, self.boss_health, ",".join(completed) if completed else "none", str(self.modes)])
         except Exception:
             pass
 
@@ -3505,12 +2829,7 @@ class Week6Logic:
         try:
             with open(self.csv_file_path, 'a', newline='', encoding='utf-8') as f:
                 completed = [k for k, v in self.modes.items() if v["completed"]]
-                csv.writer(f).writerow([
-                    time.strftime("%Y-%m-%d %H:%M:%S"),
-                    self.xp_balance, self.boss_health,
-                    ",".join(completed) if completed else "none",
-                    str(self.modes),
-                ])
+                csv.writer(f).writerow([time.strftime("%Y-%m-%d %H:%M:%S"), self.xp_balance, self.boss_health, ",".join(completed) if completed else "none", str(self.modes)])
         except Exception:
             pass
 
@@ -3518,25 +2837,15 @@ class Week6Logic:
 # ============= WEEK 6 UI =============
 
 class Week6UI(QWidget):
-    """
-    UI layer for Week 6 Challenge Battle.
-    Page 0 = identification (bypassed at runtime).
-    Page 1 = challenge battle.
-    Page 2 = victory.
-    """
-
     def __init__(self, base_logic, user_name="", is_english=True):
         super().__init__()
-        self.base_logic  = base_logic
+        self.base_logic = base_logic
         self.base_logic.user_name = user_name
-        self.is_english  = is_english
-
+        self.is_english = is_english
         self.set_lang_strings()
         self.logic = Week6Logic(base_logic, user_name, is_english)
-
         self.setWindowTitle(self.strings["window_title"])
         self.setWindowState(Qt.WindowMaximized)
-
         self.setStyleSheet("""
             QWidget      { background-color: #0a0a12; color: #ffffff;
                            font-family: Arial; font-size: 24px; }
@@ -3550,17 +2859,13 @@ class Week6UI(QWidget):
                            color: #0fecb0; border: 2px solid #0fecb0;
                            border-radius: 10px; }
         """)
-
         self.pages = QStackedWidget()
         self._setup_identification_page()
         self._setup_challenge_page()
         self._setup_victory_page()
-
         layout = QVBoxLayout()
         layout.addWidget(self.pages)
         self.setLayout(layout)
-
-    # ---- Strings ----
 
     def set_lang_strings(self):
         if self.is_english:
@@ -3622,161 +2927,86 @@ class Week6UI(QWidget):
                 "progress_fresh":     "Défi lancé pour {name}",
             }
 
-    # ---- Pages ----
-
     def _setup_identification_page(self):
-        """Page 0  -  kept for standalone use; bypassed at runtime."""
-        page   = QWidget()
+        page = QWidget()
         layout = QVBoxLayout()
-
-        title = AccessibleLabel(
-            visual_text=self.strings["id_title"],
-            accessible_text=self.strings["id_title"],
-        )
-        title.setStyleSheet(
-            "font-size: 30px; font-weight: bold; color: #e94560;"
-            "background-color: transparent; border: none;"
-        )
+        title = AccessibleLabel(visual_text=self.strings["id_title"], accessible_text=self.strings["id_title"])
+        title.setStyleSheet("font-size: 30px; font-weight: bold; color: #e94560; background-color: transparent; border: none;")
         layout.addWidget(title)
-
-        instructions = AccessibleBrowser(
-            text=self.strings["id_instructions"],
-            accessible_text=self.strings["id_instructions"],
-        )
+        instructions = AccessibleBrowser(text=self.strings["id_instructions"], accessible_text=self.strings["id_instructions"])
         instructions.setMinimumHeight(150)
         layout.addWidget(instructions)
-
-        btn_row   = QHBoxLayout()
+        btn_row = QHBoxLayout()
         btn_start = AccessiblePushButton(self.strings["id_button_start"])
         btn_start.clicked.connect(self.start_challenge)
         btn_row.addWidget(btn_start)
-
-        btn_back  = AccessiblePushButton(self.strings["id_button_back"])
+        btn_back = AccessiblePushButton(self.strings["id_button_back"])
         btn_back.clicked.connect(self._go_back)
         btn_row.addWidget(btn_back)
-
         layout.addLayout(btn_row)
         layout.addStretch()
         page.setLayout(layout)
         self.pages.addWidget(page)
 
     def _setup_challenge_page(self):
-        """Page 1  -  main challenge battle."""
-        page   = QWidget()
+        page = QWidget()
         layout = QVBoxLayout()
-
-        title = AccessibleLabel(
-            visual_text=self.strings["challenge_title"],
-            accessible_text=self.strings["challenge_title"],
-        )
-        title.setStyleSheet(
-            "font-size: 30px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none;"
-        )
+        title = AccessibleLabel(visual_text=self.strings["challenge_title"], accessible_text=self.strings["challenge_title"])
+        title.setStyleSheet("font-size: 30px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none;")
         layout.addWidget(title)
-
-        # Stats row
         stats_layout = QHBoxLayout()
-
-        self.xp_display = AccessibleLabel(
-            visual_text=self.strings["xp_visual"].format(xp=50, xp_max=1500),
-            accessible_text=self.strings["xp_accessible"].format(xp=50, xp_max=1500),
-        )
+        self.xp_display = AccessibleLabel(visual_text=self.strings["xp_visual"].format(xp=50, xp_max=1500), accessible_text=self.strings["xp_accessible"].format(xp=50, xp_max=1500))
         stats_layout.addWidget(self.xp_display)
-
-        self.health_display = AccessibleLabel(
-            visual_text=self.strings["health_visual"].format(health=100),
-            accessible_text=self.strings["health_accessible"].format(health=100),
-        )
+        self.health_display = AccessibleLabel(visual_text=self.strings["health_visual"].format(health=100), accessible_text=self.strings["health_accessible"].format(health=100))
         stats_layout.addWidget(self.health_display)
-
         init_rank = self.logic.get_rank_from_xp()
-        self.rank_display = AccessibleLabel(
-            visual_text=self.strings["rank_visual"].format(rank=init_rank),
-            accessible_text=self.strings["rank_accessible"].format(rank=init_rank),
-        )
+        self.rank_display = AccessibleLabel(visual_text=self.strings["rank_visual"].format(rank=init_rank), accessible_text=self.strings["rank_accessible"].format(rank=init_rank))
         stats_layout.addWidget(self.rank_display)
-
         layout.addLayout(stats_layout)
-
-        # Separator
         sep = AccessibleLabel(visual_text="-" * 40, accessible_text="")
-        sep.setStyleSheet(
-            "color: #444; background: transparent; border: none; font-size: 16px;"
-        )
+        sep.setStyleSheet("color: #444; background: transparent; border: none; font-size: 16px;")
         layout.addWidget(sep)
-
-        # Modes header
-        modes_header = AccessibleLabel(
-            visual_text=self.strings["modes_header"],
-            accessible_text=self.strings["modes_header"],
-        )
-        modes_header.setStyleSheet(
-            "font-weight: bold; color: #f9d342;"
-            "background-color: transparent; border: none; font-size: 20px;"
-        )
+        modes_header = AccessibleLabel(visual_text=self.strings["modes_header"], accessible_text=self.strings["modes_header"])
+        modes_header.setStyleSheet("font-weight: bold; color: #f9d342; background-color: transparent; border: none; font-size: 20px;")
         layout.addWidget(modes_header)
-
         self.mode_buttons = {}
         for mode_key in ["warmup", "combo", "precision", "sentence", "survival", "crazy_party"]:
-            data        = self.logic.modes[mode_key]
+            data = self.logic.modes[mode_key]
             status_text = self.logic.get_mode_status_text(mode_key)
             btn = AccessiblePushButton(f"{data['name']}  {status_text}")
             btn.clicked.connect(lambda checked, mk=mode_key: self._on_mode_clicked(mk))
             self.mode_buttons[mode_key] = btn
             layout.addWidget(btn)
-
         btn_exit = AccessiblePushButton(self.strings["button_exit"])
         btn_exit.clicked.connect(self._exit_challenge)
         layout.addWidget(btn_exit)
-
         page.setLayout(layout)
         self.pages.addWidget(page)
 
     def _setup_victory_page(self):
-        """Page 2 - redesigned victory screen with user name, story, and two action buttons."""
         page = QWidget()
         layout = QVBoxLayout()
         layout.setSpacing(20)
-
-        # Title
-        title = AccessibleLabel(
-            visual_text=self.strings["victory_title"],
-            accessible_text=self.strings["victory_title"],
-        )
-        title.setStyleSheet(
-            "font-size: 42px; font-weight: bold; color: #0fecb0;"
-            "background-color: transparent; border: none; padding: 20px;"
-        )
+        title = AccessibleLabel(visual_text=self.strings["victory_title"], accessible_text=self.strings["victory_title"])
+        title.setStyleSheet("font-size: 42px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 20px;")
         layout.addWidget(title)
-
-        # Congratulation message (includes user name)
         user_name = self.logic.user_name if self.logic.user_name else "Champion"
         if self.is_english:
             congrats = f"Congratulations, {user_name}!"
         else:
             congrats = f"Félicitations, {user_name} !"
-
-        congrats_label = AccessibleLabel(
-            visual_text=congrats,
-            accessible_text=congrats,
-        )
-        congrats_label.setStyleSheet(
-            "font-size: 28px; font-weight: bold; color: #e94560;"
-            "background-color: transparent; border: none; padding: 10px;"
-        )
+        congrats_label = AccessibleLabel(visual_text=congrats, accessible_text=congrats)
+        congrats_label.setStyleSheet("font-size: 28px; font-weight: bold; color: #e94560; background-color: transparent; border: none; padding: 10px;")
         layout.addWidget(congrats_label)
-
-        # Detailed story in an accessible browser
         if self.is_english:
             story = (
                 f"You have successfully completed all six modes of the Ultimate Challenge!\n\n"
-                f"• Warmup Gate – survived 8 minutes of continuous typing.\n"
-                f"• Combo Rush – mastered the multiplier stages.\n"
-                f"• Precision Arena – earned your medal through accuracy and speed.\n"
-                f"• Sentence Mode – proved your command of full sentences.\n"
-                f"• Survival Gate – endured the hardest waves.\n"
-                f"• Crazy Keyboard Party – fought in the risk zone and reached safety.\n\n"
+                f"• Warmup Gate - survived 8 minutes of continuous typing.\n"
+                f"• Combo Rush - mastered the multiplier stages.\n"
+                f"• Precision Arena - earned your medal through accuracy and speed.\n"
+                f"• Sentence Mode - proved your command of full sentences.\n"
+                f"• Survival Gate - endured the hardest waves.\n"
+                f"• Crazy Keyboard Party - fought in the risk zone and reached safety.\n\n"
                 f"Your journey as a Blind Keyboard Master has reached a new peak. "
                 f"The boss is defeated, and the keyboard now bends to your will.\n\n"
                 f"May this skill serve you in all your future adventures. "
@@ -3787,12 +3017,12 @@ class Week6UI(QWidget):
         else:
             story = (
                 f"Vous avez réussi à terminer les six modes du Défi Ultime !\n\n"
-                f"• Porte Réchauffement – survécu 8 minutes de frappe continue.\n"
-                f"• Combo Rush – maîtrisé les étapes à multiplicateur.\n"
-                f"• Precision Arena – décroché votre médaille par la précision et la vitesse.\n"
-                f"• Mode Phrase – prouvé votre maîtrise des phrases complètes.\n"
-                f"• Porte de Survie – enduré les vagues les plus difficiles.\n"
-                f"• Fête Folle Clavier – combattu en zone risquée et atteint la zone sûre.\n\n"
+                f"• Porte Réchauffement - survécu 8 minutes de frappe continue.\n"
+                f"• Combo Rush - maîtrisé les étapes à multiplicateur.\n"
+                f"• Precision Arena - décroché votre médaille par la précision et la vitesse.\n"
+                f"• Mode Phrase - prouvé votre maîtrise des phrases complètes.\n"
+                f"• Porte de Survie - enduré les vagues les plus difficiles.\n"
+                f"• Fête Folle Clavier - combattu en zone risquée et atteint la zone sûre.\n\n"
                 f"Votre parcours en tant que Maître du Clavier Aveugle a atteint un nouveau sommet. "
                 f"Le boss est vaincu, et le clavier s'incline devant vous.\n\n"
                 f"Que cette compétence vous serve dans toutes vos aventures futures. "
@@ -3800,117 +3030,73 @@ class Week6UI(QWidget):
                 f"Vous pouvez maintenant retourner au combat de défi pour rejouer n'importe quel mode librement, "
                 f"ou revenir à la page de sélection des semaines pour poursuivre votre progression globale."
             )
-
         story_browser = AccessibleBrowser(text=story, accessible_text=story)
         story_browser.setMinimumHeight(300)
         layout.addWidget(story_browser)
-
-        # Button row
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(20)
-
-        btn_week = AccessiblePushButton(
-            "Return to Week Selection" if self.is_english else "Retour à la sélection des semaines"
-        )
+        btn_week = AccessiblePushButton("Return to Week Selection" if self.is_english else "Retour à la sélection des semaines")
         btn_week.clicked.connect(self._go_to_week_selection)
         btn_layout.addWidget(btn_week)
-
-        btn_challenge = AccessiblePushButton(
-            "Return to Challenge Battle" if self.is_english else "Retour au combat de défi"
-        )
+        btn_challenge = AccessiblePushButton("Return to Challenge Battle" if self.is_english else "Retour au combat de défi")
         btn_challenge.clicked.connect(self._go_to_challenge_battle)
         btn_layout.addWidget(btn_challenge)
-
         layout.addLayout(btn_layout)
         layout.addStretch()
         page.setLayout(layout)
         self.pages.addWidget(page)
 
-    # ---- Actions ----
-
     def start_challenge(self):
-        """Jump straight to battle page and refresh from loaded state."""
         self.logic.init_challenge_progress_file()
         self.pages.setCurrentIndex(1)
         self.update_display()
         if self.base_logic.speaker:
             key = "progress_loaded" if self.logic.progress_loaded else "progress_fresh"
-            self.base_logic.speaker.output(
-                self.strings[key].format(name=self.logic.user_name)
-            )
+            self.base_logic.speaker.output(self.strings[key].format(name=self.logic.user_name))
 
     def _on_mode_clicked(self, mode_key):
         mode = self.logic.modes[mode_key]
-
         if mode["status"] == "locked":
             if self.base_logic.speaker:
                 key = "locked_crazy" if mode_key == "crazy_party" else "locked_other"
                 self.base_logic.speaker.output(self.strings[key])
             return
-
-        # Warmup  -  launch actual session
         if mode_key == "warmup":
             if self.base_logic.speaker:
-                self.base_logic.speaker.output(
-                    self.strings["mode_started"].format(name=mode["name"])
-                )
+                self.base_logic.speaker.output(self.strings["mode_started"].format(name=mode["name"]))
             self._start_warmup_typing()
             return
-
-        # Combo  -  launch actual session
         if mode_key == "combo":
             if self.base_logic.speaker:
-                self.base_logic.speaker.output(
-                    self.strings["mode_started"].format(name=mode["name"])
-                )
+                self.base_logic.speaker.output(self.strings["mode_started"].format(name=mode["name"]))
             self._start_combo_typing()
             return
-
-        # Precision Arena  -  launch actual session
         if mode_key == "precision":
             if self.base_logic.speaker:
-                self.base_logic.speaker.output(
-                    self.strings["mode_started"].format(name=mode["name"])
-                )
+                self.base_logic.speaker.output(self.strings["mode_started"].format(name=mode["name"]))
             self._start_precision_typing()
             return
-
-        # Survival Gate  -  launch actual session
         if mode_key == "survival":
             if self.base_logic.speaker:
-                self.base_logic.speaker.output(
-                    self.strings["mode_started"].format(name=mode["name"])
-                )
+                self.base_logic.speaker.output(self.strings["mode_started"].format(name=mode["name"]))
             self._start_survival_mode()
             return
-
-        # Sentence Mode  -  launch actual session
         if mode_key == "sentence":
             if self.base_logic.speaker:
-                self.base_logic.speaker.output(
-                    self.strings["mode_started"].format(name=mode["name"])
-                )
+                self.base_logic.speaker.output(self.strings["mode_started"].format(name=mode["name"]))
             self._start_sentence_mode()
             return
-
-        # Crazy Party  -  launch actual session
         if mode_key == "crazy_party":
             if self.base_logic.speaker:
-                self.base_logic.speaker.output(
-                    self.strings["mode_started"].format(name=mode["name"])
-                )
+                self.base_logic.speaker.output(self.strings["mode_started"].format(name=mode["name"]))
             self._start_crazy_party()
             return
-
-        # Other modes (was used as a placeholder until implemented, but currently kept as a safety when developer is adding new modes)
         if not mode["completed"]:
             self.logic.mark_mode_complete(mode_key)
             self.logic.save_progress()
             self.update_display()
             if self.base_logic.speaker:
-                self.base_logic.speaker.output(
-                    self.strings["mode_completed"].format(name=mode["name"])
-                )
+                self.base_logic.speaker.output(self.strings["mode_completed"].format(name=mode["name"]))
             if self.logic.is_challenge_complete():
                 self.logic.save_progress()
                 self.pages.setCurrentIndex(2)
@@ -3919,170 +3105,96 @@ class Week6UI(QWidget):
                 winsound.Beep(2000, 300)
         else:
             if self.base_logic.speaker:
-                self.base_logic.speaker.output(
-                    self.strings["mode_replay"].format(name=mode["name"])
-                )
+                self.base_logic.speaker.output(self.strings["mode_replay"].format(name=mode["name"]))
 
     def _go_to_week_selection(self):
-        """Exit the challenge and return to the main week selection screen."""
         self.logic.save_progress()
-        self.base_logic.reset()   # assumes base_logic has reset() that goes to week selection
+        self.base_logic.reset()
         self.close()
 
     def _go_to_challenge_battle(self):
-        """Return to the challenge battle page (index 1) without resetting progress."""
         self.pages.setCurrentIndex(1)
         self.update_display()
 
     def _start_warmup_typing(self):
-        """Show the warmup welcome page as a separate maximised window."""
         self.warmup_welcome = WarmupWelcomePage(self, is_english=self.is_english)
         self.warmup_welcome.setStyleSheet(self.styleSheet())
-        self.warmup_welcome.setWindowTitle(
-            "Warmup Gate" if self.is_english else "Porte Réchauffement"
-        )
+        self.warmup_welcome.setWindowTitle("Warmup Gate" if self.is_english else "Porte Réchauffement")
         self.warmup_welcome.setWindowState(Qt.WindowMaximized)
         self.warmup_welcome.show()
 
     def _start_combo_typing(self):
-        """Show the combo welcome page as a separate maximised window."""
         self.combo_welcome = ComboWelcomePage(self, is_english=self.is_english)
         self.combo_welcome.setStyleSheet(self.styleSheet())
-        self.combo_welcome.setWindowTitle(
-            "Combo Rush" if self.is_english else "Combo Rush"
-        )
+        self.combo_welcome.setWindowTitle("Combo Rush" if self.is_english else "Combo Rush")
         self.combo_welcome.setWindowState(Qt.WindowMaximized)
         self.combo_welcome.show()
 
     def launch_warmup_session(self):
-        """Called by WarmupWelcomePage when user presses 'I Am Ready'."""
-        self.warmup_mode = GenericTypingMode(
-            base_logic=self.base_logic,
-            mode_name="Warmup Gate",
-            is_english=self.is_english,
-            parent=self,
-        )
+        self.warmup_mode = GenericTypingMode(base_logic=self.base_logic, mode_name="Warmup Gate", is_english=self.is_english, parent=self)
         self.warmup_mode.setStyleSheet(self.styleSheet())
-        self.warmup_mode.setWindowTitle(
-            "Warmup Gate  -  Typing Session"
-            if self.is_english else
-            "Porte Réchauffement  -  Session de Frappe"
-        )
+        self.warmup_mode.setWindowTitle("Warmup Gate  -  Typing Session" if self.is_english else "Porte Réchauffement  -  Session de Frappe")
         self.warmup_mode.setWindowState(Qt.WindowMaximized)
         self.warmup_mode.show()
         self.warmup_mode.start_session()
 
     def launch_combo_session(self):
-        """Called by ComboWelcomePage when user presses 'I Am Ready'."""
-        self.combo_mode = ComboTypingMode(
-            base_logic=self.base_logic,
-            is_english=self.is_english,
-            parent=self,
-        )
+        self.combo_mode = ComboTypingMode(base_logic=self.base_logic, is_english=self.is_english, parent=self)
         self.combo_mode.setStyleSheet(self.styleSheet())
-        self.combo_mode.setWindowTitle(
-            "Combo Rush  -  Typing Session"
-            if self.is_english else
-            "Combo Rush  -  Session de Frappe"
-        )
+        self.combo_mode.setWindowTitle("Combo Rush  -  Typing Session" if self.is_english else "Combo Rush  -  Session de Frappe")
         self.combo_mode.setWindowState(Qt.WindowMaximized)
         self.combo_mode.show()
         self.combo_mode.start_session()
 
     def _start_precision_typing(self):
-        """Show the Precision Arena welcome page as a separate maximised window."""
         self.precision_welcome = PrecisionWelcomePage(self, is_english=self.is_english)
         self.precision_welcome.setStyleSheet(self.styleSheet())
-        self.precision_welcome.setWindowTitle(
-            "Precision Arena" if self.is_english else "Precision Arena"
-        )
+        self.precision_welcome.setWindowTitle("Precision Arena" if self.is_english else "Precision Arena")
         self.precision_welcome.setWindowState(Qt.WindowMaximized)
         self.precision_welcome.show()
 
     def launch_precision_session(self):
-        """Called by PrecisionWelcomePage when user presses 'I am ready for it!'."""
-        self.precision_mode = PrecisionArenaMode(
-            base_logic=self.base_logic,
-            is_english=self.is_english,
-            parent=self,
-        )
+        self.precision_mode = PrecisionArenaMode(base_logic=self.base_logic, is_english=self.is_english, parent=self)
         self.precision_mode.setStyleSheet(self.styleSheet())
-        self.precision_mode.setWindowTitle(
-            "Precision Arena  -  Typing Session"
-            if self.is_english else
-            "Precision Arena  -  Session de Frappe"
-        )
+        self.precision_mode.setWindowTitle("Precision Arena  -  Typing Session" if self.is_english else "Precision Arena  -  Session de Frappe")
         self.precision_mode.setWindowState(Qt.WindowMaximized)
         self.precision_mode.show()
         self.precision_mode.start_session()
 
     def _start_survival_mode(self):
-        """Launch Survival Gate as a separate maximised window."""
-        self.survival_mode = SurvivalMode(
-            base_logic=self.base_logic,
-            is_english=self.is_english,
-            parent=self,
-        )
+        self.survival_mode = SurvivalMode(base_logic=self.base_logic, is_english=self.is_english, parent=self)
         self.survival_mode.setStyleSheet(self.styleSheet())
-        self.survival_mode.setWindowTitle(
-            "Survival Gate" if self.is_english else "Porte de Survie"
-        )
+        self.survival_mode.setWindowTitle("Survival Gate" if self.is_english else "Porte de Survie")
         self.survival_mode.setWindowState(Qt.WindowMaximized)
         self.survival_mode.show()
         self.survival_mode.start_session()
 
     def _start_sentence_mode(self):
-        """Launch Sentence Mode."""
-        self.sentence_mode = SentenceMode(
-            base_logic=self.base_logic,
-            is_english=self.is_english,
-            parent=self,
-        )
+        self.sentence_mode = SentenceMode(base_logic=self.base_logic, is_english=self.is_english, parent=self)
         self.sentence_mode.setStyleSheet(self.styleSheet())
-        self.sentence_mode.setWindowTitle(
-            "Sentence Mode" if self.is_english else "Mode Phrase"
-        )
+        self.sentence_mode.setWindowTitle("Sentence Mode" if self.is_english else "Mode Phrase")
         self.sentence_mode.setWindowState(Qt.WindowMaximized)
         self.sentence_mode.start_session()
 
     def _start_crazy_party(self):
-        """Launch Crazy Party."""
-        self.crazy_party = CrazyParty(
-            base_logic=self.base_logic,
-            is_english=self.is_english,
-            parent=self,
-        )
+        self.crazy_party = CrazyParty(base_logic=self.base_logic, is_english=self.is_english, parent=self)
         self.crazy_party.setStyleSheet(self.styleSheet())
-        self.crazy_party.setWindowTitle(
-            "Crazy Keyboard Party" if self.is_english else "Fete Folle Clavier"
-        )
+        self.crazy_party.setWindowTitle("Crazy Keyboard Party" if self.is_english else "Fete Folle Clavier")
         self.crazy_party.setWindowState(Qt.WindowMaximized)
         self.crazy_party.show()
         self.crazy_party.start_session()
 
     def update_display(self):
-        """Refresh all stat widgets from current logic state. Check challenge complete."""
         xp, mx = self.logic.xp_balance, self.logic.xp_max
-        self.xp_display.update_text(
-            self.strings["xp_visual"].format(xp=xp, xp_max=mx),
-            self.strings["xp_accessible"].format(xp=xp, xp_max=mx),
-        )
+        self.xp_display.update_text(self.strings["xp_visual"].format(xp=xp, xp_max=mx), self.strings["xp_accessible"].format(xp=xp, xp_max=mx))
         h = self.logic.boss_health
-        self.health_display.update_text(
-            self.strings["health_visual"].format(health=h),
-            self.strings["health_accessible"].format(health=h),
-        )
+        self.health_display.update_text(self.strings["health_visual"].format(health=h), self.strings["health_accessible"].format(health=h))
         rank = self.logic.get_rank_from_xp()
-        self.rank_display.update_text(
-            self.strings["rank_visual"].format(rank=rank),
-            self.strings["rank_accessible"].format(rank=rank),
-        )
+        self.rank_display.update_text(self.strings["rank_visual"].format(rank=rank), self.strings["rank_accessible"].format(rank=rank))
         for mode_key, btn in self.mode_buttons.items():
-            data        = self.logic.modes[mode_key]
+            data = self.logic.modes[mode_key]
             status_text = self.logic.get_mode_status_text(mode_key)
             btn.setText(f"{data['name']}  {status_text}")
-
-        # Check if challenge is complete - show congrats screen
         if self.logic.is_challenge_complete():
             self.logic.save_progress()
             self.pages.setCurrentIndex(2)
