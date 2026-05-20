@@ -34,6 +34,13 @@ from sentence_mode import SentenceMode
 from static.accessible_widgets import AccessiblePushButton, AccessibleLabel, AccessibleBrowser
 
 
+def _format_uppercase_announcement(char, is_english):
+    """Return a screen-reader pronunciation for uppercase letters, with a special Y case."""
+    if char == "Y":
+        return "ay capital" if is_english else "i grec majuscule"
+    return f"{char.lower()} capital" if is_english else f"{char.lower()} majuscule"
+
+
 # ============= SHARED TYPING INPUT WITH KEYBOARD SHORTCUTS =============
 
 class ChallengeTypingInput(QLineEdit):
@@ -299,7 +306,7 @@ class GenericTypingMode(QWidget):
         if self.current_target in symbol_pronounciation:
             announcement = symbol_pronounciation[self.current_target]
         elif self.current_target.isupper():
-            announcement = f"{self.current_target.lower()} majuscule"
+            announcement = _format_uppercase_announcement(self.current_target, self.is_english)
         else:
             announcement = self.current_target
 
@@ -376,7 +383,10 @@ class GenericTypingMode(QWidget):
     def _clear_message_display(self):
         t = self._original_target
         if t:
-            ann = symbol_pronounciation.get(t, f"{t.lower()} majuscule" if t.isupper() else t)
+            ann = symbol_pronounciation.get(
+                t,
+                _format_uppercase_announcement(t, self.is_english) if t.isupper() else t
+            )
             self.target_display.update_text(t, ann)
         self.target_display.setStyleSheet("font-size: 120px; color: #f9d342; border: 3px solid #f9d342; border-radius: 10px; background-color: #1a1a2e; padding: 8px; min-height: 160px;")
 
@@ -482,7 +492,7 @@ class GenericTypingMode(QWidget):
         if self.current_target in symbol_pronounciation:
             ann = symbol_pronounciation[self.current_target]
         elif self.current_target.isupper():
-            ann = f"{self.current_target.lower()} majuscule"
+            ann = _format_uppercase_announcement(self.current_target, self.is_english)
         else:
             ann = self.current_target
         if self.base_logic.speaker:
@@ -865,7 +875,7 @@ class ComboTypingMode(GenericTypingMode):
             if char in symbol_pronounciation:
                 parts.append(symbol_pronounciation[char])
             elif char.isupper():
-                parts.append(f"{char.lower()} majuscule" if not self.is_english else f"{char.lower()} capital")
+                parts.append(_format_uppercase_announcement(char, self.is_english))
             else:
                 parts.append(char)
         return ", ".join(parts)
@@ -1617,7 +1627,7 @@ class PrecisionArenaMode(QWidget):
         if char in symbol_pronounciation:
             return symbol_pronounciation[char]
         if char.isupper() and char.isalpha():
-            return f"{char.lower()} majuscule"
+            return _format_uppercase_announcement(char, self.is_english)
         return char
 
     def _next_target(self):
@@ -2306,7 +2316,7 @@ class CrazyParty(QWidget):
         if char in symbol_pronounciation:
             return symbol_pronounciation[char]
         if char.isupper() and char.isalpha():
-            return f"{char.lower()} majuscule"
+            return _format_uppercase_announcement(char, self.is_english)
         return char
 
     def _next_target(self):
@@ -3166,7 +3176,6 @@ class Week6UI(QWidget):
         self.survival_mode.setStyleSheet(self.styleSheet())
         self.survival_mode.setWindowTitle("Survival Gate" if self.is_english else "Porte de Survie")
         self.survival_mode.setWindowState(Qt.WindowMaximized)
-        self.survival_mode.show()
         self.survival_mode.start_session()
 
     def _start_sentence_mode(self):
