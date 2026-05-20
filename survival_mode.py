@@ -10,7 +10,9 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt5.QtCore import Qt, QTimer
 from weeks import symbol_pronounciation, w6words
 from static.accessible_widgets import AccessiblePushButton, AccessibleLabel, AccessibleBrowser
-
+import time
+import os
+import csv
 
 # Create aliases for backward compatibility with existing code
 SurvivalAccessibleLabel = AccessibleLabel
@@ -20,8 +22,10 @@ SurvivalAccessibleBrowser = AccessibleBrowser
 class SurvivalTypingInput(QLineEdit):
     """
     Typing field.
-    - Ctrl key repeats the current target.
-    - Any other key press interrupts TTS and resumes timers immediately.
+    - Ctrl alone: repeat current target.
+    - Shift+Ctrl: announce status (hearts, danger, time remaining).
+    - Shift+Enter: exit confirmation (with -50 XP penalty).
+    - Any other key: interrupt TTS and resume timers.
     """
 
     def __init__(self, mode, *args, **kwargs):
@@ -29,17 +33,28 @@ class SurvivalTypingInput(QLineEdit):
         self.mode = mode
 
     def keyPressEvent(self, event):
-        # Ctrl alone: repeat target, do NOT resume timers
-        if event.key() == Qt.Key_Control:
+        # Ctrl alone (no modifiers) -> repeat target
+        if event.key() == Qt.Key_Control and event.modifiers() == Qt.ControlModifier:
             self.mode.repeat_current_target()
             return
 
-        # Any other key: interrupt TTS and resume timers, then let Qt handle the key
+        # Shift+Enter -> exit confirmation
+        if (event.key() in (Qt.Key_Return, Qt.Key_Enter)
+                and event.modifiers() & Qt.ShiftModifier):
+            self.mode._on_shift_enter()
+            return
+
+        # Shift+Ctrl -> announce status
+        if (event.key() == Qt.Key_Control
+                and event.modifiers() & Qt.ShiftModifier):
+            self.mode._announce_status()
+            return
+
+        # Any other key: interrupt TTS and resume timers
         self.mode.on_typing_key_pressed()
         super().keyPressEvent(event)
 
-
-# ============= SURVIVAL MODE =============
+# SurvivalMode: main class for the 15-minute endurance challenge.
 
 class SurvivalMode(QWidget):
     """
@@ -47,12 +62,11 @@ class SurvivalMode(QWidget):
     3 hearts + danger bar (0-10). Danger 10 = heart lost + reset.
     Success  = survive full 15 min.
     Failure  = all hearts lost before time runs out.
-    Rewards  = 200 XP, -20% boss health (fixed, no performance grading).
+    Rewards  = 200 XP, -20% boss health.
     """
 
     SESSION_DURATION = 900   # 15 minutes in seconds
 
-    # Phase boundaries in elapsed seconds
     PHASE_BOUNDS = [
         (0,   180, "Initial Phase",   "Phase Initiale"),
         (180, 360, "Capital Arrival", "Arrivee Majuscules"),
@@ -81,6 +95,13 @@ class SurvivalMode(QWidget):
         self._tts_waiting     = False
         self._tts_timers      = []
 
+        # CSV logging
+        self.survival_csv_path = None
+
+        # NEW flags for exit handling
+        self._session_finished = False
+        self._closing = False
+
         self._build_ui()
         self._build_timers()
 
@@ -102,35 +123,30 @@ class SurvivalMode(QWidget):
         root = QVBoxLayout()
         root.setSpacing(14)
 
-        # Phase label
         self.phase_label = SurvivalAccessibleLabel(
             "Initial Phase",
             "Current phase: Initial Phase. Lowercase letters only."
         )
         root.addWidget(self.phase_label)
 
-        # Session timer
         self.timer_display = SurvivalAccessibleLabel(
             "15:00",
             "Remaining session time: 15 minutes."
         )
         root.addWidget(self.timer_display)
 
-        # Hearts
         self.hearts_display = SurvivalAccessibleLabel(
             "Hearts: 3 / 3",
             "Hearts remaining: 3 out of 3."
         )
         root.addWidget(self.hearts_display)
 
-        # Danger bar
         self.danger_display = SurvivalAccessibleLabel(
             "Danger: 0 / 10",
             "Danger level: 0 out of 10."
         )
         root.addWidget(self.danger_display)
 
-        # Target display - large font
         self.target_display = SurvivalAccessibleLabel("", "Current target.")
         self.target_display.setStyleSheet(
             "padding: 12px; background-color: #1a1a2e; color: #f9d342;"
@@ -139,7 +155,6 @@ class SurvivalMode(QWidget):
         )
         root.addWidget(self.target_display)
 
-        # Countdown overlay (hidden during play)
         self.countdown_display = SurvivalAccessibleLabel("", "Countdown.")
         self.countdown_display.setStyleSheet(
             "padding: 12px; background-color: #1a1a2e; color: #0fecb0;"
@@ -149,7 +164,6 @@ class SurvivalMode(QWidget):
         self.countdown_display.setVisible(False)
         root.addWidget(self.countdown_display)
 
-        # Typing input - focus set here on gameplay start
         self.input_field = SurvivalTypingInput(self)
         self.input_field.setAccessibleName(
             "Typing field. Type the displayed target."
@@ -159,23 +173,22 @@ class SurvivalMode(QWidget):
         self.input_field.textChanged.connect(self._on_input_changed)
         root.addWidget(self.input_field)
 
-        # Help hint
         hint = (
-            "Ctrl repeats the current target. Incorrect answers and timeouts increase danger."
+            "Ctrl: repeat target | Shift+Ctrl: status | Shift+Enter: exit"
             if self.is_english else
-            "Ctrl repete la cible. Les erreurs et delais augmentent le danger."
+            "Ctrl: repeter la cible | Maj+Ctrl: statut | Maj+Entree: quitter"
         )
         self.hint_label = SurvivalAccessibleLabel(hint, hint)
         self.hint_label.setStyleSheet(
-            "padding: 8px; background-color: transparent;"
+            "padding: 8px; background: transparent;"
             "color: #888888; border: none; font-size: 16px;"
         )
         root.addWidget(self.hint_label)
 
-        # Quit button
         quit_text = "Quit" if self.is_english else "Quitter"
         self.quit_btn = AccessiblePushButton(quit_text)
-        self.quit_btn.clicked.connect(self._on_quit)
+        # MODIFIED: connect to _on_shift_enter instead of _on_quit
+        self.quit_btn.clicked.connect(self._on_shift_enter)
         root.addWidget(self.quit_btn)
 
         root.addStretch()
@@ -194,20 +207,55 @@ class SurvivalMode(QWidget):
         self.countdown_timer.setInterval(1000)
         self.countdown_timer.timeout.connect(self._on_countdown_tick)
 
-    # ============= SESSION ENTRY POINT =============
+    # ============= CSV LOGGING (optional) =============
+
+    def _init_survival_csv(self):
+        clean_name = self.base_logic.get_clean_username()
+        user_dir = os.path.join(self.base_logic.data_dir, clean_name)
+        os.makedirs(user_dir, exist_ok=True)
+        self.survival_csv_path = os.path.join(
+            user_dir, f"{clean_name}_Survival_Session.csv"
+        )
+        try:
+            with open(self.survival_csv_path, 'w', newline='', encoding='utf-8') as f:
+                csv.writer(f).writerow([
+                    "Timestamp", "Target", "Status", "Phase", "Hearts", "Danger"
+                ])
+        except Exception:
+            pass
+
+    def _log_attempt(self, target, status):
+        if not self.survival_csv_path:
+            return
+        try:
+            phase_en, phase_fr, _ = self._get_phase_info()
+            phase = phase_en if self.is_english else phase_fr
+            with open(self.survival_csv_path, 'a', newline='', encoding='utf-8') as f:
+                csv.writer(f).writerow([
+                    time.strftime("%Y-%m-%d %H:%M:%S"),
+                    target,
+                    status,
+                    phase,
+                    self.current_hearts,
+                    self.current_danger,
+                ])
+        except Exception:
+            pass
+
+    # ============= SESSION ENTRY =============
 
     def start_session(self):
-        """Show welcome dialog. If accepted, begin countdown then gameplay."""
         if not self._show_welcome_dialog():
             return
 
         self._reset_state()
+        self._init_survival_csv()   # start CSV logging
+
         self.setWindowState(Qt.WindowMaximized)
         self.show()
         self.raise_()
         self.activateWindow()
 
-        # Start 3-second countdown
         self.countdown_display.setVisible(True)
         self.countdown_display.update_text(
             str(self.countdown_value),
@@ -222,6 +270,7 @@ class SurvivalMode(QWidget):
         self.current_target  = ""
         self.countdown_value = 3
         self._tts_waiting    = False
+        self._session_finished = False   # reset finished flag
         self._clear_tts_timers()
         self.session_timer.stop()
         self.target_timer.stop()
@@ -251,7 +300,7 @@ class SurvivalMode(QWidget):
 
         title = SurvivalAccessibleLabel(
             "SURVIVAL GATE" if self.is_english else "PORTE DE SURVIE",
-            "Survival Gate - welcome screen" if self.is_english else "Porte de Survie - ecran d'accueil"
+            "Survival Gate - welcome screen"
         )
         title.setStyleSheet(
             "font-size: 28px; font-weight: bold; color: #0fecb0;"
@@ -274,13 +323,11 @@ class SurvivalMode(QWidget):
                 "- Symbol Arrival (1 min): letters, symbols and accented chars\n"
                 "- Couple Arrival (3 min): character pairs and combinations\n"
                 "- Final Phase (5 min): words\n\n"
-                "Press Ctrl at any time to repeat the current target.\n"
-                "For word targets, the timer pauses while the word is spelled out.\n"
-                "Press any key to immediately stop spelling and resume the timer.\n\n"
+                "Ctrl: repeat target | Shift+Ctrl: status | Shift+Enter: exit\n"
+                "Press any key to stop spelling and resume timer.\n\n"
                 "SAVE HEART: If you lose your last heart inside the final 5 minutes,\n"
                 "you may spend 70 XP to restore one heart and keep going.\n\n"
-                "SUCCESS REWARDS: 200 XP + Boss health -20%.\n"
-                "Perfection is NOT required. Only survival counts."
+                "SUCCESS REWARDS: 200 XP + Boss health -20%."
             )
         else:
             description = (
@@ -292,18 +339,15 @@ class SurvivalMode(QWidget):
                 "Perdre les 3 coeurs avant 15 minutes : ECHEC.\n"
                 "Survivre les 15 minutes completes : SUCCES.\n\n"
                 "5 PHASES :\n"
-                "- Phase Initiale (3 min) : lettres minuscules uniquement\n"
-                "- Arrivee Majuscules (3 min) : minuscules et majuscules melangees\n"
-                "- Arrivee Symboles (1 min) : lettres, symboles et accents\n"
-                "- Arrivee Couples (3 min) : paires et combinaisons de caracteres\n"
+                "- Phase Initiale (3 min) : lettres minuscules\n"
+                "- Arrivee Majuscules (3 min) : minuscules et majuscules\n"
+                "- Arrivee Symboles (1 min) : symboles\n"
+                "- Arrivee Couples (3 min) : paires\n"
                 "- Phase Finale (5 min) : mots\n\n"
-                "Appuyez sur Ctrl a tout moment pour repeter la cible.\n"
-                "Pour les mots, le timer se met en pause pendant l'epellation.\n"
-                "Appuyez sur n'importe quelle touche pour arreter l'epellation et reprendre.\n\n"
-                "SAUVER UN COEUR : Si vous perdez votre dernier coeur dans les 5 dernieres minutes,\n"
-                "vous pouvez depenser 70 XP pour restaurer un coeur et continuer.\n\n"
-                "RECOMPENSES DE SUCCES : 200 XP + Sante du Boss -20%.\n"
-                "La perfection n'est PAS requise. Seule la survie compte."
+                "Ctrl: repeter | Maj+Ctrl: statut | Maj+Entree: quitter\n"
+                "Appuyez sur n'importe quelle touche pour arreter l'epellation.\n\n"
+                "SAUVER UN COEUR : Depensez 70 XP pour restaurer un coeur dans les 5 dernieres minutes.\n\n"
+                "RECOMPENSES : 200 XP + Sante du boss -20%."
             )
 
         browser = SurvivalAccessibleBrowser(description, description)
@@ -314,10 +358,13 @@ class SurvivalMode(QWidget):
         btn_ready = AccessiblePushButton(
             "I'm ready for it!" if self.is_english else "Je suis pret(e) !"
         )
+        btn_ready.setAutoDefault(False)
         btn_ready.clicked.connect(dlg.accept)
         btn_row.addWidget(btn_ready)
 
         btn_not_yet = AccessiblePushButton("Not yet" if self.is_english else "Pas encore")
+        btn_not_yet.setAutoDefault(False)
+        btn_not_yet.setFocus()
         btn_not_yet.clicked.connect(dlg.reject)
         btn_row.addWidget(btn_not_yet)
 
@@ -338,12 +385,10 @@ class SurvivalMode(QWidget):
                 self.base_logic.speaker.output(str(self.countdown_value))
             return
 
-        # Countdown done - hide overlay, start gameplay
         self.countdown_timer.stop()
         self.countdown_display.setVisible(False)
         self.session_timer.start()
         self._next_target()
-        # CRITICAL: focus typing field immediately so user can type without Tab
         self.input_field.setFocus()
 
     # ============= SESSION TICK =============
@@ -357,7 +402,6 @@ class SurvivalMode(QWidget):
     # ============= DISPLAY =============
 
     def _refresh_display(self):
-        # Session timer
         remaining = max(0, self.SESSION_DURATION - self.elapsed_seconds)
         m = remaining // 60
         s = remaining % 60
@@ -366,7 +410,6 @@ class SurvivalMode(QWidget):
             f"Session time remaining: {m} minutes {s} seconds."
         )
 
-        # Phase label with time remaining in phase
         phase_en, phase_fr, phase_remaining = self._get_phase_info()
         phase_name = phase_en if self.is_english else phase_fr
         pr_m = phase_remaining // 60
@@ -375,26 +418,19 @@ class SurvivalMode(QWidget):
         accessible = f"Current phase: {phase_name}. {pr_m} minutes {pr_s} seconds left."
         self.phase_label.update_text(visual, accessible)
 
-        # Hearts
-        filled   = "H" * self.current_hearts
-        empty    = "-" * (3 - self.current_hearts)
         self.hearts_display.update_text(
             f"Hearts: {self.current_hearts} / 3",
             f"Hearts remaining: {self.current_hearts} out of 3."
         )
-
-        # Danger
         self.danger_display.update_text(
             f"Danger: {self.current_danger} / 10",
             f"Danger level: {self.current_danger} out of 10."
         )
 
     def _get_phase_info(self):
-        """Return (english_name, french_name, seconds_remaining_in_phase)."""
         for start, end, en, fr in self.PHASE_BOUNDS:
             if self.elapsed_seconds < end:
                 return en, fr, end - self.elapsed_seconds
-        # Past all phases (shouldn't happen but safe fallback)
         return "Final Phase", "Phase Finale", 0
 
     # ============= TARGET GENERATION =============
@@ -406,30 +442,20 @@ class SurvivalMode(QWidget):
         symbols   = "".join(symbol_pronounciation.keys())
 
         if t < 180:
-            # Phase 1: lowercase only
             return random.choice(lowercase)
-
         if t < 360:
-            # Phase 2: lowercase + uppercase single char
             return random.choice(lowercase + uppercase)
-
         if t < 420:
-            # Phase 3: lowercase, uppercase, symbols, accented (all single chars)
             pool = lowercase + uppercase + symbols
             return random.choice(pool)
-
         if t < 600:
-            # Phase 4: couples - 2 chars from full pool
             pool = lowercase + uppercase + symbols
             return random.choice(pool) + random.choice(pool)
-
-        # Phase 5: words from w6words; fallback to random 3-char if empty
         if w6words:
             return random.choice(w6words)
         return "".join(random.choice(lowercase) for _ in range(3))
 
     def _get_pronunciation(self, char):
-        """Get TTS announcement for a single character."""
         if char in symbol_pronounciation:
             return symbol_pronounciation[char]
         if char.isupper() and char.isalpha():
@@ -437,10 +463,8 @@ class SurvivalMode(QWidget):
         return char
 
     def _get_timeout_ms(self, target):
-        """Adaptive timeout based on target complexity."""
         n = len(target)
         if n == 1:
-            # Lowercase: 2.2s, uppercase: 3.2s, symbol: 3.8s
             if target in symbol_pronounciation:
                 return 3800
             if target.isupper():
@@ -448,13 +472,11 @@ class SurvivalMode(QWidget):
             return 2200
         if n == 2:
             return 4500
-        # Word: base + per-char
         return 5000 + n * 600
 
     # ============= TARGET LIFECYCLE =============
 
     def _next_target(self):
-        """Generate, display, announce next target."""
         self.target_timer.stop()
         self._clear_tts_timers()
         self._tts_waiting = False
@@ -465,28 +487,18 @@ class SurvivalMode(QWidget):
         self.input_field.clear()
         self.input_field.blockSignals(False)
 
-        # Build announcement
         ann = self._build_announcement(self.current_target)
-
-        self.target_display.update_text(
-            self.current_target,
-            ann
-        )
-
+        self.target_display.update_text(self.current_target, ann)
         self._announce_target()
 
     def _build_announcement(self, target):
-        """Build the full TTS string for a target."""
         if len(target) == 1:
             return self._get_pronunciation(target)
-        # Multi-char: spell letter by letter
         return ", ".join(self._get_pronunciation(c) for c in target)
 
     def _announce_target(self):
-        """Speak the current target via TTS, pausing timers for multi-char."""
         self._clear_tts_timers()
         if not (self.base_logic and getattr(self.base_logic, 'speaker', None)):
-            # No speaker - start timer immediately
             self.target_timer.start(self._get_timeout_ms(self.current_target))
             return
 
@@ -494,25 +506,20 @@ class SurvivalMode(QWidget):
         n = len(target)
 
         if n == 1:
-            # Single char: speak pronunciation, start timer immediately
             self.base_logic.speaker.output(self._get_pronunciation(target))
             self.target_timer.start(self._get_timeout_ms(target))
         else:
-            # Multi-char: pause both timers, spell out, resume on first keypress
             self._pause_timers()
-            # Speak each character with staggered delays
             delay = 0
-            for i, char in enumerate(target):
+            for char in target:
                 pron = self._get_pronunciation(char)
                 t = QTimer(self)
                 t.setSingleShot(True)
-                char_delay = delay
                 t.timeout.connect(lambda p=pron: self.base_logic.speaker.output(p))
-                t.start(char_delay)
+                t.start(delay)
                 self._tts_timers.append(t)
                 delay += len(pron) * 65 + 200
 
-            # Resume timers after all chars have been spoken
             resume_timer = QTimer(self)
             resume_timer.setSingleShot(True)
             resume_timer.timeout.connect(self._resume_timers)
@@ -538,13 +545,11 @@ class SurvivalMode(QWidget):
             pass
 
     def repeat_current_target(self):
-        """Called by Ctrl key - re-announce current target."""
         self._clear_tts_timers()
         self._tts_waiting = False
         self._announce_target()
 
     def on_typing_key_pressed(self):
-        """Called on any non-Ctrl key press. Stops TTS and resumes timers."""
         if self._tts_waiting:
             self._clear_tts_timers()
             self._resume_timers()
@@ -554,20 +559,40 @@ class SurvivalMode(QWidget):
             t.stop()
         self._tts_timers.clear()
 
+    # ============= STATUS ANNOUNCEMENT (Shift+Ctrl) =============
+
+    def _announce_status(self):
+        """Shift+Ctrl: announce hearts, danger, remaining time."""
+        self._pause_timers()
+        remaining = max(0, self.SESSION_DURATION - self.elapsed_seconds)
+        m = remaining // 60
+        s = remaining % 60
+        if self.is_english:
+            msg = (f"Hearts: {self.current_hearts}. Danger: {self.current_danger}. "
+                   f"Time remaining: {m} minutes {s} seconds.")
+        else:
+            msg = (f"Coeurs : {self.current_hearts}. Danger : {self.current_danger}. "
+                   f"Temps restant : {m} minutes {s} secondes.")
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(msg)
+        delay = len(msg) * 100 + 500
+        QTimer.singleShot(delay, self._resume_timers)
+
     # ============= INPUT HANDLING =============
 
     def _on_input_changed(self, text):
         if not self.current_target:
             return
 
-        # Prefix match: keep typing
-        if self.current_target.startswith(text):
-            if text == self.current_target:
-                self._on_correct()
+        if text == self.current_target:
+            self._on_correct()
             return
 
-        # Wrong character
+        if self.current_target.startswith(text):
+            return
+
         winsound.Beep(400, 200)
+        self._log_attempt(self.current_target, "incorrect")
         self._apply_danger(1)
         self.input_field.blockSignals(True)
         self.input_field.clear()
@@ -575,6 +600,7 @@ class SurvivalMode(QWidget):
 
     def _on_target_timeout(self):
         winsound.Beep(600, 300)
+        self._log_attempt(self.current_target, "timeout")
         self._apply_danger(2)
 
     def _on_correct(self):
@@ -582,6 +608,7 @@ class SurvivalMode(QWidget):
         self.target_timer.stop()
         self._tts_waiting = False
         winsound.Beep(1500, 100)
+        self._log_attempt(self.current_target, "correct")
         if not self.session_timer.isActive():
             self.session_timer.start()
         self._next_target()
@@ -590,7 +617,6 @@ class SurvivalMode(QWidget):
     # ============= DANGER AND HEARTS =============
 
     def _apply_danger(self, amount):
-        """Add danger. If reaches 10, lose a heart."""
         self._clear_tts_timers()
         self.target_timer.stop()
         self._tts_waiting = False
@@ -603,28 +629,23 @@ class SurvivalMode(QWidget):
             self.current_hearts -= 1
             self._refresh_display()
 
-            # 1.5-second low beep signals heart loss, then 3-second full pause
             winsound.Beep(300, 1500)
             self.session_timer.stop()
             self.input_field.setEnabled(False)
 
             if self.current_hearts <= 0:
-                # Edge case: time ended at exact same moment
                 if self.elapsed_seconds >= self.SESSION_DURATION:
                     QTimer.singleShot(3000, lambda: self._complete_session(success=True))
                     return
-                # Final 5 minutes: offer save heart after pause
                 if self.elapsed_seconds >= self.SESSION_DURATION - 300:
                     QTimer.singleShot(3000, self._offer_save_heart)
                 else:
                     QTimer.singleShot(3000, lambda: self._complete_session(success=False))
                 return
 
-            # Heart lost but still alive - resume after 3-second pause
             QTimer.singleShot(3000, self._resume_after_heart_loss)
             return
 
-        # No heart lost - resume immediately
         if self.elapsed_seconds < self.SESSION_DURATION:
             if not self.session_timer.isActive():
                 self.session_timer.start()
@@ -632,7 +653,6 @@ class SurvivalMode(QWidget):
         self.input_field.setFocus()
 
     def _resume_after_heart_loss(self):
-        """Called 3 seconds after a heart is lost (but player still alive)."""
         self.input_field.setEnabled(True)
         if self.elapsed_seconds < self.SESSION_DURATION:
             if not self.session_timer.isActive():
@@ -640,10 +660,9 @@ class SurvivalMode(QWidget):
         self._next_target()
         self.input_field.setFocus()
 
-    # ============= SAVE HEART SCREEN =============
+    # ============= SAVE HEART =============
 
     def _offer_save_heart(self):
-        """Show save-heart dialog in the final 5 minutes."""
         self.session_timer.stop()
         self.target_timer.stop()
 
@@ -659,7 +678,7 @@ class SurvivalMode(QWidget):
 
         title = SurvivalAccessibleLabel(
             "SAVE HEART" if self.is_english else "SAUVER UN COEUR",
-            "Save heart screen" if self.is_english else "Ecran sauver un coeur"
+            "Save heart screen"
         )
         title.setStyleSheet(
             "font-size: 26px; font-weight: bold; color: #e94560;"
@@ -703,7 +722,6 @@ class SurvivalMode(QWidget):
             logic = getattr(self.parent_challenge, 'logic', None)
             xp    = getattr(logic, 'xp_balance', None) if logic else getattr(self.base_logic, 'xp_balance', None)
             if xp is not None and xp >= 70:
-                # Deduct from challenge logic if available, else from base_logic
                 if logic and hasattr(logic, 'xp_balance'):
                     logic.xp_balance = max(0, logic.xp_balance - 70)
                 else:
@@ -711,25 +729,23 @@ class SurvivalMode(QWidget):
                 self.current_hearts = 1
                 self.current_danger = 0
                 self._refresh_display()
+                self.input_field.setEnabled(True)   # re-enable after heart restoration
                 if self.base_logic.speaker:
-                    msg_tts = (
+                    self.base_logic.speaker.output(
                         "One heart restored. Keep going!"
                         if self.is_english else
                         "Un coeur restaure. Continuez !"
                     )
-                    self.base_logic.speaker.output(msg_tts)
-                # Resume immediately
                 self.session_timer.start()
                 self._next_target()
                 self.input_field.setFocus()
             else:
                 if self.base_logic.speaker:
-                    msg_tts = (
+                    self.base_logic.speaker.output(
                         "Not enough XP. Session ended."
                         if self.is_english else
                         "Pas assez de XP. Session terminee."
                     )
-                    self.base_logic.speaker.output(msg_tts)
                 self._complete_session(success=False)
         else:
             self._complete_session(success=False)
@@ -737,17 +753,23 @@ class SurvivalMode(QWidget):
     # ============= SESSION COMPLETION =============
 
     def _complete_session(self, success):
-        """Stop all timers, apply rewards/penalties, show result screen."""
         self._clear_tts_timers()
         self.session_timer.stop()
         self.target_timer.stop()
         self.countdown_timer.stop()
+        self._session_finished = True          # NEW: prevent further exit dialogs
 
         if success:
             self._apply_success_rewards()
             self._show_success_screen()
         else:
-            self._show_failure_screen()   # no XP penalty on heart-loss defeat
+            self._show_failure_screen()
+
+        if self.survival_csv_path and os.path.exists(self.survival_csv_path):
+            try:
+                os.remove(self.survival_csv_path)
+            except Exception:
+                pass
 
         if self.parent_challenge:
             self.parent_challenge.update_display()
@@ -756,7 +778,6 @@ class SurvivalMode(QWidget):
         self.close()
 
     def _apply_success_rewards(self):
-        """Award 200 XP and -20% boss health to challenge logic."""
         logic = getattr(self.parent_challenge, 'logic', None)
         if not logic:
             return
@@ -767,11 +788,9 @@ class SurvivalMode(QWidget):
             logic.completed_modes_count = sum(
                 1 for v in logic.modes.values() if v['completed']
             )
-            # Unlock remaining non-crazy modes
             for mk, data in logic.modes.items():
                 if mk != 'crazy_party' and not data['completed']:
                     data['status'] = 'unlocked'
-            # Unlock crazy party once all 5 others done
             if logic.completed_modes_count >= 5:
                 if not logic.modes['crazy_party']['completed']:
                     logic.modes['crazy_party']['status'] = 'unlocked'
@@ -779,7 +798,6 @@ class SurvivalMode(QWidget):
         logic.add_xp(200)
 
     def _apply_failure_penalty(self):
-        """Apply -50 XP penalty. Called ONLY on manual quit, never on heart-loss defeat."""
         logic = getattr(self.parent_challenge, 'logic', None)
         if logic and hasattr(logic, 'xp_balance'):
             logic.xp_balance = max(0, logic.xp_balance - 50)
@@ -798,7 +816,7 @@ class SurvivalMode(QWidget):
 
         title = SurvivalAccessibleLabel(
             "VICTORY - You Survived!" if self.is_english else "VICTOIRE - Vous avez survecu !",
-            "Success! You survived the full 15 minutes." if self.is_english else "Succes ! Vous avez survecu les 15 minutes completes."
+            "Success! You survived the full 15 minutes."
         )
         title.setStyleSheet(
             "font-size: 26px; font-weight: bold; color: #0fecb0;"
@@ -844,7 +862,7 @@ class SurvivalMode(QWidget):
 
         title = SurvivalAccessibleLabel(
             "DEFEATED" if self.is_english else "VAINCU",
-            "You were defeated." if self.is_english else "Vous avez ete vaincu."
+            "You were defeated."
         )
         title.setStyleSheet(
             "font-size: 26px; font-weight: bold; color: #e94560;"
@@ -870,43 +888,79 @@ class SurvivalMode(QWidget):
         layout.addWidget(browser)
 
         btn_row = QHBoxLayout()
-
         btn_retry = AccessiblePushButton("Retry" if self.is_english else "Recommencer")
         btn_retry.clicked.connect(lambda: self._retry_from_failure(dlg))
         btn_row.addWidget(btn_retry)
-
         btn_back = AccessiblePushButton(
             "Return to Challenge Battle" if self.is_english else "Retour au Combat de Defi"
         )
         btn_back.clicked.connect(dlg.accept)
         btn_row.addWidget(btn_back)
-
         layout.addLayout(btn_row)
         dlg.setLayout(layout)
         dlg.exec_()
 
     def _retry_from_failure(self, dialog):
-        """Close failure dialog and restart the session."""
         dialog.accept()
         self.start_session()
 
-    # ============= QUIT =============
+    # ============= EXIT HANDLER (Shift+Enter and window close) =============
 
-    def _on_quit(self):
-        """Quit button - applies failure penalty."""
+    def _on_shift_enter(self):
+        """Shift+Enter: exit confirmation with -50 XP penalty."""
+        if self._session_finished:
+            return
         self._clear_tts_timers()
         self.session_timer.stop()
         self.target_timer.stop()
         self.countdown_timer.stop()
-        self._apply_failure_penalty()
-        if self.parent_challenge:
-            self.parent_challenge.update_display()
-            self.parent_challenge.logic.save_progress()
-        self.close()
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Exit?" if self.is_english else "Quitter ?")
+        dlg.setMinimumWidth(480)
+        dlg.setStyleSheet(self.styleSheet())
+        layout = QVBoxLayout()
+
+        msg_text = (
+            "Exit Survival Gate?\n\nA 50 XP penalty will be applied."
+            if self.is_english else
+            "Quitter la Porte de Survie ?\n\nUne penalite de 50 XP sera appliquee."
+        )
+        msg = SurvivalAccessibleBrowser(text=msg_text, accessible_text=msg_text)
+        layout.addWidget(msg)
+
+        btn_row = QHBoxLayout()
+        btn_yes = AccessiblePushButton("Yes, exit" if self.is_english else "Oui, quitter")
+        btn_no  = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
+        btn_yes.clicked.connect(dlg.accept)
+        btn_no.clicked.connect(dlg.reject)
+        btn_row.addWidget(btn_yes)
+        btn_row.addWidget(btn_no)
+        layout.addLayout(btn_row)
+        dlg.setLayout(layout)
+
+        if dlg.exec_() == QDialog.Accepted:
+            self._apply_failure_penalty()
+            if self.parent_challenge:
+                self.parent_challenge.update_display()
+                self.parent_challenge.logic.save_progress()
+            self.close()
+        else:
+            # Resume session
+            self.session_timer.start()
+            self.target_timer.start(self._get_timeout_ms(self.current_target))
+            self._closing = False
 
     def closeEvent(self, event):
-        self._clear_tts_timers()
-        self.session_timer.stop()
-        self.target_timer.stop()
-        self.countdown_timer.stop()
-        super().closeEvent(event)
+        if self._closing:
+            event.accept()
+            return
+        if self._session_finished:
+            event.accept()
+            return
+        if not self.session_timer.isActive() and not self.target_timer.isActive():
+            event.accept()
+            return
+        self._closing = True
+        self._on_shift_enter()
+        event.ignore()
