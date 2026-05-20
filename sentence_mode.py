@@ -1,4 +1,3 @@
-
 # Blind Keyboard Master - keyboard learning app accessible for visually impaired people
 # Copyright (C) 2026 Louay Cherif
 #
@@ -24,7 +23,7 @@ from weeks import sentences_en, sentences_fr
 from static.accessible_widgets import AccessiblePushButton, AccessibleLabel, AccessibleBrowser
 
 
-# Create aliases for backward compatibility with existing code
+# Create aliases for backward compatibility
 SentenceAccessibleLabel = AccessibleLabel
 SentenceAccessibleBrowser = AccessibleBrowser
 
@@ -33,12 +32,25 @@ class SentenceTypingInput(QLineEdit):
     def __init__(self, mode, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.mode = mode
+        self._last_was_space = False  # optional, not strictly needed
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Control:
+        # Ctrl alone: repeat current word
+        if event.key() == Qt.Key_Control and event.modifiers() == Qt.ControlModifier:
             self.mode.repeat_current_word()
             return
 
+        # Shift+Ctrl: announce status
+        if (event.key() == Qt.Key_Control and event.modifiers() & Qt.ShiftModifier):
+            self.mode._announce_status()
+            return
+
+        # Shift+Enter: exit confirmation
+        if (event.key() in (Qt.Key_Return, Qt.Key_Enter) and event.modifiers() & Qt.ShiftModifier):
+            self.mode._on_shift_enter()
+            return
+
+        # Ctrl+number: repeat specific word
         if event.modifiers() & Qt.ControlModifier:
             text = event.text()
             if text.isdigit():
@@ -46,20 +58,68 @@ class SentenceTypingInput(QLineEdit):
                 self.mode.repeat_word_index(index)
                 return
 
+        # Enter: submit sentence
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             self.mode.submit_sentence()
             return
 
+        # Space: only advance if not at last word, and prevent double spaces
         if event.key() == Qt.Key_Space:
-            super().keyPressEvent(event)
+            # Prevent double spaces
+            if self.text().endswith(' '):
+                # ignore second space
+                return
+            # If at last word, announce and do NOT insert space
+            if self.mode.current_word_index >= len(self.mode.words) - 1:
+                if self.mode.base_logic.speaker:
+                    msg = ("No more words, please press enter."
+                           if self.mode.is_english else
+                           "Plus de mots, veuillez appuyer sur Entrée.")
+                    self.mode.base_logic.speaker.output(msg)
+                return  # do not insert space
+            # Normal case: advance word and insert space
             self.mode.advance_word()
+            super().keyPressEvent(event)
             return
 
+        # Backspace: handle spaces carefully
+        if event.key() == Qt.Key_Backspace:
+            text = self.text()
+            cursor = self.cursorPosition()
+            # If there is a character to delete
+            if cursor > 0:
+                char_to_delete = text[cursor-1]
+                if char_to_delete == ' ':
+                    # Deleting a space: only move back if there is a word before the current one
+                    # and the space is not trailing after the last word? Actually we need to know if there is a next word.
+                    # Condition: move back only if the current word index is not zero AND the space is not after the last word?
+                    # Simpler: if the current word index is not the last word (i.e., there is a next word), then moving back means
+                    # we want to go to the previous word. But if we are at the last word and deleting a trailing space,
+                    # we should not move back.
+                    # However, note that when we are at the last word, the word index is len(words)-1.
+                    # The only time we have a space after the last word is when user typed a space after the last word,
+                    # but that is prevented by the space handling above. So if we are here, the space must be between words.
+                    # Therefore, we can always move back when deleting a space? Wait, the user reported moving back at the end.
+                    # Let's refine: We only move back if the space is not the last character and there is a word after.
+                    # Actually, easier: if after deleting the space, the cursor position would be at the end of the previous word,
+                    # then we should move back. But our current implementation uses a separate move_word_back().
+                    # To avoid confusion, we only move back if the current word index is greater than 0 AND the space is not at the very end of the text (meaning it is between words).
+                    # But the user might delete a space that is between words, then we should move back.
+                    # I'll implement: if the current word index is not 0, then moving back is allowed. But what about trailing spaces? They are prevented by space handler.
+                    # So safe: always move back when deleting a space? No, because the user could have pressed space after last word before we fixed it? But we fixed it.
+                    # Given the user wants: "when the user presses space in the end of the phrase where no words are left it's announced then space removed"
+                    # Since we already prevent inserting that space, there will be no trailing space. So backspace on space only occurs between words.
+                    # Therefore, we can unconditionally move back on space deletion.
+                    if self.mode.current_word_index > 0:
+                        self.mode.move_word_back()
+            super().keyPressEvent(event)
+            return
+
+        # Any other key: interrupt pending announcements
         if self.mode.has_pending_announcements():
             self.mode.stop_pending_announcements()
 
         super().keyPressEvent(event)
-
 
 class SentenceMode(QWidget):
     def __init__(self, base_logic, is_english=True, parent=None):
@@ -79,7 +139,15 @@ class SentenceMode(QWidget):
         self.total_xp_earned = 0
         self.total_boss_damage = 0
         self.passed = False
+        self.session_finished = False          # new flag to prevent exit dialog on normal close
+        self._announcement_paused = False
+        self._closing = False
+
         self._setup_ui()
+
+    # ----------------------------------------------------------------------
+    # UI setup
+    # ----------------------------------------------------------------------
 
     def _setup_ui(self):
         layout = QVBoxLayout()
@@ -161,7 +229,7 @@ class SentenceMode(QWidget):
         self.btn_quit = AccessiblePushButton(
             "Quit" if self.is_english else "Quitter"
         )
-        self.btn_quit.clicked.connect(self.leave_session)
+        self.btn_quit.clicked.connect(self._on_shift_enter)
         button_layout.addWidget(self.btn_quit)
 
         self.btn_hear_again = AccessiblePushButton(
@@ -172,9 +240,11 @@ class SentenceMode(QWidget):
         layout.addLayout(button_layout)
 
         help_text = (
-            "Ctrl repeats the current word. Ctrl + number repeats that word index."
+            "Ctrl repeats the current word. Ctrl+number repeats that word index.\n"
+            "Shift+Ctrl: status | Shift+Enter: exit"
             if self.is_english else
-            "Ctrl répète le mot actuel. Ctrl + chiffre répète le mot correspondant."
+            "Ctrl répète le mot actuel. Ctrl+chiffre répète le mot correspondant.\n"
+            "Maj+Ctrl: statut | Maj+Entrée: quitter"
         )
         self.help_display = SentenceAccessibleBrowser(
             text=help_text,
@@ -185,6 +255,10 @@ class SentenceMode(QWidget):
 
         self.setLayout(layout)
 
+    # ----------------------------------------------------------------------
+    # Session lifecycle
+    # ----------------------------------------------------------------------
+
     def start_session(self):
         self._prepare_sentence_pool()
         self.current_sentence_index = 0
@@ -192,6 +266,7 @@ class SentenceMode(QWidget):
         self.total_xp_earned = 0
         self.total_boss_damage = 0
         self.passed = False
+        self.session_finished = False
         self._show_welcome_dialog()
 
     def _prepare_sentence_pool(self):
@@ -224,7 +299,8 @@ class SentenceMode(QWidget):
                 "Finish 12 sentences with 80% or higher average accuracy to pass.\n"
                 "This mode is designed for natural typing flow rather than punishment.\n\n"
                 "Interaction model: the sentence is spoken first, then each word is spoken and spelled.\n"
-                "Type the sentence word by word. Press Ctrl to repeat the current word, or Ctrl + number to repeat a different word.\n"
+                "Type the sentence word by word. Press Ctrl to repeat the current word, or Ctrl+number to repeat a different word.\n"
+                "Shift+Ctrl announces status. Shift+Enter exits with penalty.\n"
                 "When you reach the end, press Enter to submit the whole sentence."
             )
             start_text = "I'm ready for it!"
@@ -236,7 +312,8 @@ class SentenceMode(QWidget):
                 "Terminez 12 phrases avec une précision moyenne d'au moins 80% pour réussir.\n"
                 "Ce mode est conçu pour un flux de frappe naturel plutôt que pour une punition.\n\n"
                 "Modèle d'interaction : la phrase est d'abord prononcée, puis chaque mot est prononcé et épelé.\n"
-                "Tapez la phrase mot par mot. Appuyez sur Ctrl pour répéter le mot actuel, ou Ctrl + chiffre pour répéter un autre mot.\n"
+                "Tapez la phrase mot par mot. Appuyez sur Ctrl pour répéter le mot actuel, ou Ctrl+chiffre pour répéter un autre mot.\n"
+                "Maj+Ctrl annonce le statut. Maj+Entrée quitte avec pénalité.\n"
                 "Lorsque vous avez atteint la fin, appuyez sur Entrée pour soumettre la phrase entière."
             )
             start_text = "Je suis prêt !"
@@ -284,6 +361,10 @@ class SentenceMode(QWidget):
         self._update_display_labels()
         self._announce_sentence()
 
+    # ----------------------------------------------------------------------
+    # Display and speech helpers
+    # ----------------------------------------------------------------------
+
     def _update_display_labels(self):
         sentence_text = self.current_sentence if self.current_sentence else ""
         sentence_access = (
@@ -325,25 +406,13 @@ class SentenceMode(QWidget):
             avg_access = f"Average accuracy is {average:.1f} percent"
         self.average_accuracy_label.update_text(avg_text, avg_access)
 
-    def _announce_sentence(self):
-        self._cancel_pending_timers()
-        self._announce_text(self.current_sentence)
-        QTimer.singleShot(1200, self._speak_current_word)
-
-    def _speak_current_word(self):
-        if not self.words:
-            return
-        self._cancel_pending_timers()
-        word = self.words[self.current_word_index]
-        self._announce_text(word)
-        delay = 500
-        for letter in word:
-            timer = QTimer(self)
-            timer.setSingleShot(True)
-            timer.timeout.connect(lambda l=letter: self._announce_text(l))
-            timer.start(delay)
-            self.pending_timers.append(timer)
-            delay += 280
+    def _get_char_pronunciation(self, char):
+        from weeks import symbol_pronounciation
+        if char in symbol_pronounciation:
+            return symbol_pronounciation[char]
+        if char.isupper() and char.isalpha():
+            return f"{char.lower()} majuscule" if not self.is_english else f"{char.lower()} capital"
+        return char
 
     def _announce_text(self, text):
         if self.base_logic.speaker:
@@ -359,6 +428,68 @@ class SentenceMode(QWidget):
 
     def stop_pending_announcements(self):
         self._cancel_pending_timers()
+
+    def _pause_announcement(self):
+        if not self._announcement_paused:
+            self._announcement_paused = True
+            self._cancel_pending_timers()
+
+    def _resume_announcement(self):
+        if self._announcement_paused:
+            self._announcement_paused = False
+
+    # ----------------------------------------------------------------------
+    # Sentence announcement and word spelling
+    # ----------------------------------------------------------------------
+
+    def _announce_sentence(self):
+        self._cancel_pending_timers()
+        self._announce_text(self.current_sentence)
+        QTimer.singleShot(1200, self._speak_current_word)
+
+    def _speak_current_word(self):
+        if not self.words:
+            return
+        self._cancel_pending_timers()
+        word = self.words[self.current_word_index]
+        self._announce_text(word)
+        delay = 500
+        for char in word:
+            pron = self._get_char_pronunciation(char)
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda p=pron: self._announce_text(p))
+            timer.start(delay)
+            self.pending_timers.append(timer)
+            delay += len(pron) * 65 + 200
+
+    # ----------------------------------------------------------------------
+    # Word navigation
+    # ----------------------------------------------------------------------
+
+    def advance_word(self):
+        if self.current_word_index < len(self.words) - 1:
+            self.current_word_index += 1
+            self._update_display_labels()
+            self._speak_current_word()
+        else:
+            if self.base_logic.speaker:
+                msg = (
+                    "No more words, please press enter."
+                    if self.is_english else
+                    "Plus de mots, veuillez appuyer sur Entrée."
+                )
+                self.base_logic.speaker.output(msg)
+
+    def move_word_back(self):
+        if self.current_word_index > 0:
+            self.current_word_index -= 1
+            self._update_display_labels()
+            self._speak_current_word()
+
+    # ----------------------------------------------------------------------
+    # Repeat commands
+    # ----------------------------------------------------------------------
 
     def repeat_current_word(self):
         if not self.words:
@@ -378,19 +509,9 @@ class SentenceMode(QWidget):
         self._update_display_labels()
         self._speak_current_word()
 
-    def advance_word(self):
-        if self.current_word_index < len(self.words) - 1:
-            self.current_word_index += 1
-            self._update_display_labels()
-            self._speak_current_word()
-        else:
-            if self.base_logic.speaker:
-                msg = (
-                    "No more words, please press enter."
-                    if self.is_english else
-                    "Plus de mots, veuillez appuyer sur Entrée."
-                )
-                self.base_logic.speaker.output(msg)
+    # ----------------------------------------------------------------------
+    # Sentence submission and accuracy
+    # ----------------------------------------------------------------------
 
     def submit_sentence(self):
         typed = self.input_field.text().strip()
@@ -412,9 +533,9 @@ class SentenceMode(QWidget):
         max_count = max(len(target_words), len(typed_words))
         matched = 0
         total = 0
-        for index in range(max_count):
-            tgt = target_words[index] if index < len(target_words) else "??"
-            typ = typed_words[index] if index < len(typed_words) else "??"
+        for idx in range(max_count):
+            tgt = target_words[idx] if idx < len(target_words) else "??"
+            typ = typed_words[idx] if idx < len(typed_words) else "??"
             word_len = max(len(tgt), len(typ))
             for pos in range(word_len):
                 tc = tgt[pos] if pos < len(tgt) else "?"
@@ -431,7 +552,12 @@ class SentenceMode(QWidget):
             return 10
         return 0
 
+    # ----------------------------------------------------------------------
+    # Session completion
+    # ----------------------------------------------------------------------
+
     def _finish_session(self):
+        self.session_finished = True
         average = sum(self.sentence_results) / len(self.sentence_results)
         self.passed = average >= 80.0 and len(self.sentence_results) >= self.sentence_count_required
         self.total_boss_damage = 15 if self.passed else 0
@@ -582,13 +708,74 @@ class SentenceMode(QWidget):
         self.parent_challenge.update_display()
 
     def _close_to_challenge(self):
+        self.session_finished = True   # ensure closeEvent doesn't show exit dialog
         self.close()
         if self.parent_challenge:
             self.parent_challenge.pages.setCurrentIndex(1)
             self.parent_challenge.update_display()
 
-    def leave_session(self):
-        self.close()
+    # ----------------------------------------------------------------------
+    # Status announcement (Shift+Ctrl)
+    # ----------------------------------------------------------------------
+
+    def _announce_status(self):
+        self._pause_announcement()
+        left = self.sentence_count_required - len(self.sentence_results)
+        if not self.sentence_results:
+            avg_text = "?" if self.is_english else "?"
+        else:
+            avg = sum(self.sentence_results) / len(self.sentence_results)
+            avg_text = f"{avg:.1f}%"
+        if self.is_english:
+            msg = f"Average accuracy: {avg_text}. Sentences left: {left}."
+        else:
+            msg = f"Précision moyenne : {avg_text}. Phrases restantes : {left}."
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(msg)
+        delay = len(msg) * 100 + 500
+        QTimer.singleShot(delay, self._resume_announcement)
+
+    # ----------------------------------------------------------------------
+    # Exit handling
+    # ----------------------------------------------------------------------
+
+    def _on_shift_enter(self):
+        if self.session_finished:
+            return
+        self._pause_announcement()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Exit?" if self.is_english else "Quitter ?")
+        dlg.setMinimumWidth(480)
+        dlg.setStyleSheet(self.styleSheet())
+        layout = QVBoxLayout()
+        msg_text = (
+            "Exit Sentence Mode?\n\nA 50 XP penalty will be applied."
+            if self.is_english else
+            "Quitter le Mode Phrase ?\n\nUne penalite de 50 XP sera appliquee."
+        )
+        msg = SentenceAccessibleBrowser(text=msg_text, accessible_text=msg_text)
+        layout.addWidget(msg)
+        btn_row = QHBoxLayout()
+        btn_yes = AccessiblePushButton("Yes, exit" if self.is_english else "Oui, quitter")
+        btn_no = AccessiblePushButton("No, continue" if self.is_english else "Non, continuer")
+        btn_yes.clicked.connect(lambda: self._confirm_exit(dlg))
+        btn_no.clicked.connect(lambda: self._cancel_exit(dlg))
+        btn_row.addWidget(btn_yes)
+        btn_row.addWidget(btn_no)
+        layout.addLayout(btn_row)
+        dlg.setLayout(layout)
+        dlg.exec_()
+
+    def _confirm_exit(self, dialog):
+        dialog.accept()
+        self._apply_exit_penalty()
+        self._close_to_challenge()
+
+    def _cancel_exit(self, dialog):
+        dialog.reject()
+        self._resume_announcement()
+
+    def _apply_exit_penalty(self):
         if self.parent_challenge and hasattr(self.parent_challenge, 'logic'):
             logic = self.parent_challenge.logic
             logic.xp_balance = max(0, logic.xp_balance - 50)
@@ -601,9 +788,21 @@ class SentenceMode(QWidget):
                 "Mode Phrase quitté. Pénalité de 50 XP appliquée."
             )
             self.base_logic.speaker.output(msg)
-        if self.parent_challenge:
-            self.parent_challenge.pages.setCurrentIndex(1)
+
+    def leave_session(self):
+        self._on_shift_enter()
+
+    # ----------------------------------------------------------------------
+    # Window close event
+    # ----------------------------------------------------------------------
 
     def closeEvent(self, event):
-        self._cancel_pending_timers()
-        event.accept()
+        if self._closing:
+            event.accept()
+            return
+        if self.session_finished or not self.current_sentence:
+            event.accept()
+            return
+        self._closing = True
+        self._on_shift_enter()
+        event.ignore()
