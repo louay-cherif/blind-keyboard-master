@@ -22,12 +22,14 @@ import time
 import os
 import csv
 import random
+from turtle import delay
 import winsound
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                              QLineEdit, QLabel, QStackedWidget, QDialog, QApplication, QMessageBox,
                              QTextBrowser)
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QUrl
 from PyQt5.QtGui import QPixmap
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent, QMediaPlaylist
 from weeks import symbol_pronounciation, w6words
 from survival_mode import SurvivalMode
 from sentence_mode import SentenceMode
@@ -231,7 +233,7 @@ class GenericTypingMode(QWidget):
         layout.addWidget(self.input_field)
 
         btn_leave = AccessiblePushButton(button_text)
-        btn_leave.clicked.connect(self.leave_session)
+        btn_leave.clicked.connect(self._on_shift_enter)
         layout.addWidget(btn_leave)
 
         self.setLayout(layout)
@@ -780,7 +782,7 @@ class ComboTypingMode(GenericTypingMode):
         layout.addWidget(self.input_field)
 
         btn_leave = AccessiblePushButton(button_text)
-        btn_leave.clicked.connect(self.leave_session)
+        btn_leave.clicked.connect(self._on_shift_enter)
         layout.addWidget(btn_leave)
         self.setLayout(layout)
 
@@ -1527,7 +1529,7 @@ class PrecisionArenaMode(QWidget):
         layout.addWidget(self.input_field)
 
         btn_leave = AccessiblePushButton(button_text)
-        btn_leave.clicked.connect(self.leave_session)
+        btn_leave.clicked.connect(self._on_shift_enter)
         layout.addWidget(btn_leave)
         self.setLayout(layout)
 
@@ -2054,7 +2056,12 @@ class CrazyPartyTypingInput(QLineEdit):
 class CrazyParty(QWidget):
     TICKET_COST = 100
     SAFE_ZONE_XP = 100
-    WORD_INTERVAL = 100
+    WORD_INTERVAL = 75
+    STORM_INTERVAL_SECONDS = 300
+    STORM_DURATION_SECONDS = 60
+    STORM_WARNING_SECONDS = 3
+    STORM_PHASE_SWITCH_SECONDS = 30
+    STORM_TIMEOUT_MS = 2500
 
     def __init__(self, base_logic, is_english=True, parent=None):
         super().__init__()
@@ -2071,9 +2078,14 @@ class CrazyParty(QWidget):
         self.countdown_value = 3
         self.session_xp_earned = 0.0
         self.ticket_refunded = False
-        self.xp_per_correct = 0.01
+        self.xp_per_correct = 0.005
         self.correct_streak = 0
         self.error_streak = 0
+        self.storm_active = False
+        self.storm_warning_active = False
+        self.storm_elapsed_seconds = 0
+        self.storm_phase = 0
+        self.countdown_mode = None
         self._tts_waiting = False
         self._tts_timers = []
         self._closing = False
@@ -2112,7 +2124,7 @@ class CrazyParty(QWidget):
         self.timer_label = AccessibleLabel("Time: 00:00", "Elapsed time: 0 seconds.")
         row2.addWidget(self.timer_label)
         root.addLayout(row2)
-        self.xpc_label = AccessibleLabel("XP/correct: 0.010", "Current XP per correct answer: 0.010.")
+        self.xpc_label = AccessibleLabel("XP/correct: 0.005", "Current XP per correct answer: 0.005.")
         self.xpc_label.setStyleSheet("padding: 10px; background-color: #1a1a2e; color: #0fecb0; border: 2px solid #0fecb0; border-radius: 10px; font-size: 26px;")
         root.addWidget(self.xpc_label)
         self.target_display = AccessibleLabel("", "Current target.")
@@ -2181,9 +2193,14 @@ class CrazyParty(QWidget):
         self.target_count = 0
         self.session_xp_earned = 0.0
         self.ticket_refunded = False
-        self.xp_per_correct = 0.01
+        self.xp_per_correct = 0.005
         self.correct_streak = 0
         self.error_streak = 0
+        self.storm_active = False
+        self.storm_warning_active = False
+        self.storm_elapsed_seconds = 0
+        self.storm_phase = 0
+        self.countdown_mode = None
         self._tts_waiting = False
         self._clear_tts()
         self.session_timer.stop()
@@ -2215,10 +2232,14 @@ class CrazyParty(QWidget):
                 "- 5 hearts. Danger bar 0-10.\n"
                 "- Wrong answer: +1 danger. Timeout: +2 danger.\n"
                 "- Danger 10: lose a heart, danger resets, 4-second beep, 5-second pause.\n\n"
-                "XP PER CORRECT: Starts at 0.010 per correct answer.\n"
-                "- 5 correct in a row: doubles the multiplier (max 2.0).\n"
-                "- One incorrect: subtracts current XP/correct from session XP (no halving).\n"
+                "XP PER CORRECT: Starts at 0.005 per correct answer.\n"
+                "- 7 correct in a row: doubles the multiplier (max 1.0).\n"
+                "- One incorrect: subtracts 3x current XP/correct from session XP.\n"
                 "- Two consecutive incorrects OR a timeout: halves the multiplier.\n\n"
+                "STORM: Every 5 minutes of typing, a 1-minute storm arrives.\n"
+                "The first 30 seconds use uppercase letters only, the next 30 seconds use symbols only.\n"
+                "Storm targets do not count toward the regular word interval.\n"
+                "In the storm, correct answers give 2x XP per correct, and errors cost 4x XP per correct.\n\n"
                 "WORD TARGETS: Occasional words appear. Type one correctly to deal "
                 "1% boss health damage. Incorrect words do nothing special.\n\n"
                 "Ctrl: repeat target. Shift+Ctrl: status. Shift+Enter: exit.\n\n"
@@ -2236,10 +2257,14 @@ class CrazyParty(QWidget):
                 "- 5 coeurs. Jauge de danger 0-10.\n"
                 "- Mauvaise reponse : +1 danger. Delai : +2 danger.\n"
                 "- Danger 10 : perdre un coeur, danger remis a 0, bip 4 secondes, pause 5 secondes.\n\n"
-                "XP PAR CORRECT : Commence a 0,010.\n"
-                "- 5 bonnes de suite : double le multiplicateur (max 2,0).\n"
-                "- Une erreur : soustrait la valeur actuelle de XP/correct des XP de session (pas de division).\n"
+                "XP PAR CORRECT : Commence a 0,005.\n"
+                "- 7 bonnes de suite : double le multiplicateur (max 1,0).\n"
+                "- Une erreur : soustrait 3x XP/correct des XP de session.\n"
                 "- Deux erreurs consecutives OU un delai : divise le multiplicateur par deux.\n\n"
+                "TEMPETE : Toutes les 5 minutes de frappe, une tempete arrive pour 1 minute.\n"
+                "Les 30 premières secondes n'utilisent que des majuscules, les 30 suivantes ne sont que des symboles.\n"
+                "Les cibles de tempete ne comptent pas dans l'intervalle des mots normaux.\n"
+                "En tempete, les reponses correctes donnent 2x XP/correct, et les erreurs coutent 4x XP/correct.\n\n"
                 "CIBLES MOT : Des mots apparaissent parfois. Tapez-en un correctement "
                 "pour infliger 1% de degats au boss. Un mot incorrect ne fait rien de special.\n\n"
                 "Ctrl : repeter. Maj+Ctrl : statut. Maj+Entree : quitter.\n\n"
@@ -2262,11 +2287,18 @@ class CrazyParty(QWidget):
     def _on_countdown_tick(self):
         self.countdown_value -= 1
         if self.countdown_value > 0:
-            self.countdown_display.update_text(str(self.countdown_value), f"Countdown: {self.countdown_value}.")
+            if self.countdown_mode == 'storm':
+                self.countdown_display.update_text(str(self.countdown_value), f"Storm starts in {self.countdown_value}.")
+            else:
+                self.countdown_display.update_text(str(self.countdown_value), f"Countdown: {self.countdown_value}.")
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(str(self.countdown_value))
             return
         self.countdown_timer.stop()
+        if self.countdown_mode == 'storm':
+            self.countdown_mode = None
+            self._activate_storm()
+            return
         self.countdown_display.setVisible(False)
         self.session_timer.start()
         self._next_target()
@@ -2274,6 +2306,87 @@ class CrazyParty(QWidget):
 
     def _on_session_tick(self):
         self.elapsed_seconds += 1
+        if self.storm_active:
+            self.storm_elapsed_seconds += 1
+            self._update_storm_countdown()
+            if self.storm_elapsed_seconds == self.STORM_PHASE_SWITCH_SECONDS:
+                self._switch_storm_phase()
+            if self.storm_elapsed_seconds >= self.STORM_DURATION_SECONDS:
+                self._end_storm()
+        elif self.storm_warning_active:
+            pass
+        elif self.elapsed_seconds > 0 and self.elapsed_seconds % self.STORM_INTERVAL_SECONDS == 0:
+            self._begin_storm_warning()
+        self._refresh_display()
+
+    def _begin_storm_warning(self):
+        self._clear_tts()
+        self.target_timer.stop()
+        self.storm_warning_active = True
+        self.storm_elapsed_seconds = 0
+        self.countdown_mode = 'storm'
+        self.countdown_value = self.STORM_WARNING_SECONDS
+        self.countdown_display.setVisible(True)
+        self.countdown_display.update_text(str(self.countdown_value), f"Storm starts in {self.countdown_value}.")
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(str(self.countdown_value))
+        self.countdown_timer.start()
+
+    def _activate_storm(self):
+        self.storm_warning_active = False
+        self.countdown_mode = None
+        self.storm_active = True
+        self.storm_elapsed_seconds = 0
+        self.storm_phase = 1
+        self._update_storm_countdown()
+        self._delayed_speak(
+            "Storm incoming! Uppercase letters only for 30 seconds." if self.is_english else
+            "Tempete en approche ! Lettres majuscules uniquement pendant 30 secondes.",
+            delay=400
+        )
+        self._next_target()
+        self._refresh_display()
+
+    def _update_storm_countdown(self):
+        if not self.storm_active:
+            return
+        remaining = max(0, self.STORM_DURATION_SECONDS - self.storm_elapsed_seconds)
+        self.countdown_display.setVisible(True)
+        self.countdown_display.update_text(str(remaining), f"Storm ends in {remaining} seconds.")
+
+    def _switch_storm_phase(self):
+        if not self.storm_active:
+            return
+        self.storm_phase = 2
+        self._clear_tts()
+        self.target_timer.stop()
+        if self.base_logic.speaker:
+            self.base_logic.speaker.output(
+                "Storm phase two: symbols only for 30 seconds." if self.is_english else
+                "Phase deux de la tempete : symboles uniquement pendant 30 secondes."
+            )
+        self._next_target()
+        self._refresh_display()
+
+    def _end_storm(self):
+        self._clear_tts()
+        self.target_timer.stop()
+        self.storm_active = False
+        self.storm_elapsed_seconds = 0
+        self.storm_phase = 0
+        if self.base_logic.speaker:
+            self._delayed_speak(
+                "Storm ended. Back to normal party." if self.is_english else
+                "Tempete terminee. Retour a la fete normale.",
+                delay=400
+            )
+        self._next_target()
+        if self.ticket_refunded:
+            self._delayed_speak(
+                "Safe zone reached! Ticket refunded. Keep earning!" if self.is_english else
+                "Zone sure atteinte ! Billet rembourse. Continuez !",
+                delay=1200
+            )
         self._refresh_display()
 
     def _refresh_display(self):
@@ -2284,27 +2397,55 @@ class CrazyParty(QWidget):
         self.danger_display.update_text(f"Danger: {self.current_danger} / 10", f"Danger level: {self.current_danger} out of 10.")
         self.session_xp_label.update_text(f"Session XP: {self.session_xp_earned:.1f}", f"Session XP earned: {self.session_xp_earned:.1f}.")
         self.xpc_label.update_text(f"XP/correct: {self.xp_per_correct:.3f}", f"Current XP per correct: {self.xp_per_correct:.3f}.")
+        if self.storm_active:
+            remaining = max(0, self.STORM_DURATION_SECONDS - self.storm_elapsed_seconds)
+            self.countdown_display.setVisible(True)
+            self.countdown_display.update_text(str(remaining), f"Storm ends in {remaining} seconds.")
+        elif self.storm_warning_active:
+            self.countdown_display.setVisible(True)
+            self.countdown_display.update_text(str(self.countdown_value), f"Storm starts in {self.countdown_value}.")
+        elif self.countdown_mode != 'storm':
+            self.countdown_display.setVisible(False)
+        prefix = ""
+        if self.storm_active:
+            if self.storm_phase == 1:
+                prefix = "STORM ACTIVE - Uppercase only | " if self.is_english else "TEMPETE ACTIVE - Majuscules uniquement | "
+            elif self.storm_phase == 2:
+                prefix = "STORM ACTIVE - Symbols only | " if self.is_english else "TEMPETE ACTIVE - Symboles uniquement | "
         if self.ticket_refunded:
-            self.zone_label.update_text("SAFE ZONE - Ticket refunded!", "Safe zone. Your ticket has been refunded. All rewards are kept.")
+            self.zone_label.update_text(
+                f"{prefix}SAFE ZONE - Ticket refunded!",
+                f"{prefix}Safe zone. Your ticket has been refunded. All rewards are kept."
+            )
             self.zone_label.setStyleSheet("padding: 10px; background-color: #0a2a0a; color: #0fecb0; border: 2px solid #0fecb0; border-radius: 10px; font-size: 20px;")
         else:
             needed = self.SAFE_ZONE_XP - self.session_xp_earned
-            self.zone_label.update_text(f"RISK ZONE - Earn {needed:.0f} more XP to reach safe zone", f"Risk zone. Earn {needed:.0f} more XP to recover your ticket.")
+            self.zone_label.update_text(
+                f"{prefix}RISK ZONE - Earn {needed:.0f} more XP to reach safe zone",
+                f"{prefix}Risk zone. Earn {needed:.0f} more XP to recover your ticket."
+            )
             self.zone_label.setStyleSheet("padding: 10px; background-color: #3a0a0a; color: #e94560; border: 2px solid #e94560; border-radius: 10px; font-size: 20px;")
 
     def _is_word_turn(self):
         return self.target_count > 0 and self.target_count % self.WORD_INTERVAL == 0
 
     def _generate_target(self):
+        if self.storm_active:
+            if self.storm_phase == 1:
+                return random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+            symbols = "".join(symbol_pronounciation.keys())
+            return random.choice(symbols) if symbols else random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
         if self._is_word_turn() and w6words:
             return random.choice(w6words)
         lowercase = "abcdefghijklmnopqrstuvwxyz"
         uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         symbols = "".join(symbol_pronounciation.keys())
-        pool = lowercase * 15 + uppercase * 5 + symbols * 2
+        pool = lowercase * 15 + uppercase * 10 + symbols * 5
         return random.choice(pool)
 
     def _get_timeout_ms(self, target):
+        if self.storm_active and len(target) == 1:
+            return self.STORM_TIMEOUT_MS
         n = len(target)
         if n == 1:
             if target in symbol_pronounciation: return 3800
@@ -2323,7 +2464,8 @@ class CrazyParty(QWidget):
         self.target_timer.stop()
         self._clear_tts()
         self._tts_waiting = False
-        self.target_count += 1
+        if not self.storm_active:
+            self.target_count += 1
         self.current_target = self._generate_target()
         self.input_field.textChanged.disconnect(self._on_input_changed)
         self.input_field.clear()
@@ -2404,6 +2546,15 @@ class CrazyParty(QWidget):
             t.stop()
         self._tts_timers.clear()
 
+    def _delayed_speak(self, text, delay=400):
+        if not self.base_logic.speaker:
+            return
+        t = QTimer(self)
+        t.setSingleShot(True)
+        t.timeout.connect(lambda: self.base_logic.speaker.output(text))
+        t.start(delay)
+        self._tts_timers.append(t)
+
     def _on_input_changed(self, text):
         if not self.current_target:
             return
@@ -2423,13 +2574,16 @@ class CrazyParty(QWidget):
     def _on_correct_letter(self):
         self.target_timer.stop()
         winsound.Beep(1500, 100)
-        self.correct_streak += 1
-        self.error_streak = 0
-        xp_gained = round(self.xp_per_correct, 3)
+        if self.storm_active:
+            xp_gained = round(self.xp_per_correct * 2, 3)
+        else:
+            self.correct_streak += 1
+            self.error_streak = 0
+            xp_gained = round(self.xp_per_correct, 3)
+            if self.correct_streak >= 7:
+                self.xp_per_correct = round(min(self.xp_per_correct * 2, 1.0), 3)
+                self.correct_streak = 0
         self.session_xp_earned = round(self.session_xp_earned + xp_gained, 3)
-        if self.correct_streak >= 5:
-            self.xp_per_correct = round(min(self.xp_per_correct * 2, 2.0), 3)
-            self.correct_streak = 0
         self._check_safe_zone()
         self._refresh_display()
         if not self.session_timer.isActive():
@@ -2461,13 +2615,14 @@ class CrazyParty(QWidget):
         self.target_timer.stop()
         self._tts_waiting = False
         winsound.Beep(400, 200)
-        penalty = round(self.xp_per_correct, 3)
+        penalty = round(self.xp_per_correct * (4 if self.storm_active else 3), 3)
         self.session_xp_earned = round(max(0, self.session_xp_earned - penalty), 3)
-        self.error_streak += 1
-        self.correct_streak = 0
-        if self.error_streak >= 2:
-            self.xp_per_correct = round(max(self.xp_per_correct / 2, 0.001), 3)
-            self.error_streak = 0
+        if not self.storm_active:
+            self.error_streak += 1
+            self.correct_streak = 0
+            if self.error_streak >= 2:
+                self.xp_per_correct = round(max(self.xp_per_correct / 2, 0.001), 3)
+                self.error_streak = 0
         self.input_field.blockSignals(True)
         self.input_field.clear()
         self.input_field.blockSignals(False)
@@ -2475,11 +2630,12 @@ class CrazyParty(QWidget):
 
     def _on_target_timeout(self):
         winsound.Beep(600, 300)
-        penalty = round(self.xp_per_correct, 3)
+        penalty = round(self.xp_per_correct * (4 if self.storm_active else 3), 3)
         self.session_xp_earned = round(max(0, self.session_xp_earned - penalty), 3)
-        self.xp_per_correct = round(max(self.xp_per_correct / 2, 0.001), 3)
-        self.error_streak = 0
-        self.correct_streak = 0
+        if not self.storm_active:
+            self.xp_per_correct = round(max(self.xp_per_correct / 2, 0.001), 3)
+            self.error_streak = 0
+            self.correct_streak = 0
         self._apply_danger(2)
 
     def _apply_danger(self, amount):
@@ -2521,14 +2677,36 @@ class CrazyParty(QWidget):
     def _check_safe_zone(self):
         if not self.ticket_refunded and self.session_xp_earned >= self.SAFE_ZONE_XP:
             self.ticket_refunded = True
+            msg = ("Safe zone reached! Ticket refunded. Keep earning!" if self.is_english else "Zone sure atteinte ! Billet rembourse. Continuez !")
             if self.base_logic.speaker:
-                msg = ("Safe zone reached! Ticket refunded. Keep earning!" if self.is_english else "Zone sure atteinte ! Billet rembourse. Continuez !")
-                self.base_logic.speaker.output(msg)
+                self._delayed_speak(msg, delay=400)
 
     def _announce_status(self):
-        msg = (f"Hearts: {self.current_hearts}. Danger: {self.current_danger}." if self.is_english else f"Coeurs : {self.current_hearts}. Danger : {self.current_danger}.")
+        self._pause_timers()   # stop both timers
+        if self.ticket_refunded:
+            zone_text = "Safe zone - ticket refunded" if self.is_english else "Zone sure - billet rembourse"
+        else:
+            needed = max(0, self.SAFE_ZONE_XP - self.session_xp_earned)
+            if self.is_english:
+                zone_text = f"Risk zone - {needed:.0f} XP to safe zone"
+            else:
+                zone_text = f"Zone risquee - {needed:.0f} XP pour zone sure"
+        if self.is_english:
+            msg = (
+                f"Hearts: {self.current_hearts}. Danger: {self.current_danger}. "
+                f"XP per correct: {self.xp_per_correct:.3f}. Session XP: {self.session_xp_earned:.1f}. "
+                f"{zone_text}."
+            )
+        else:
+            msg = (
+                f"Coeurs : {self.current_hearts}. Danger : {self.current_danger}. "
+                f"XP par correct : {self.xp_per_correct:.3f}. XP de session : {self.session_xp_earned:.1f}. "
+                f"{zone_text}."
+            )
         if self.base_logic.speaker:
             self.base_logic.speaker.output(msg)
+        delay = len(msg) * 100 + 500
+        QTimer.singleShot(delay, self._resume_timers)
 
     def _on_shift_enter(self):
         self._on_ctrl_q()
@@ -2608,6 +2786,15 @@ class CrazyParty(QWidget):
             final_xp = int(self.session_xp_earned)
             if logic:
                 logic.add_xp(final_xp)
+                # Also mark mode as completed when exiting in safe zone
+                mode = logic.modes.get('crazy_party')
+                if mode and not mode.get('completed'):
+                    mode['status'] = 'done'
+                    mode['completed'] = True
+                    logic.completed_modes_count = sum(1 for v in logic.modes.values() if v['completed'])
+                    logic.save_progress()
+                    if self.parent_challenge:
+                        self.parent_challenge.update_display()
         else:
             final_xp = int(self.session_xp_earned // 2)
             if logic:
@@ -2856,6 +3043,9 @@ class Week6UI(QWidget):
         self.logic = Week6Logic(base_logic, user_name, is_english)
         self.setWindowTitle(self.strings["window_title"])
         self.setWindowState(Qt.WindowMaximized)
+        self._fire_player = None
+        self._celebrate_player = None
+        self._victory_sequence_started = False
         self.setStyleSheet("""
             QWidget      { background-color: #0a0a12; color: #ffffff;
                            font-family: Arial; font-size: 24px; }
@@ -2976,6 +3166,10 @@ class Week6UI(QWidget):
         sep = AccessibleLabel(visual_text="-" * 40, accessible_text="")
         sep.setStyleSheet("color: #444; background: transparent; border: none; font-size: 16px;")
         layout.addWidget(sep)
+        self._victory_banner = AccessibleLabel(visual_text="", accessible_text="")
+        self._victory_banner.setStyleSheet("font-size: 24px; font-weight: bold; color: #f9d342; background-color: transparent; border: none; padding: 10px;")
+        self._victory_banner.setVisible(False)
+        layout.addWidget(self._victory_banner)
         modes_header = AccessibleLabel(visual_text=self.strings["modes_header"], accessible_text=self.strings["modes_header"])
         modes_header.setStyleSheet("font-weight: bold; color: #f9d342; background-color: transparent; border: none; font-size: 20px;")
         layout.addWidget(modes_header)
@@ -2987,9 +3181,9 @@ class Week6UI(QWidget):
             btn.clicked.connect(lambda checked, mk=mode_key: self._on_mode_clicked(mk))
             self.mode_buttons[mode_key] = btn
             layout.addWidget(btn)
-        btn_exit = AccessiblePushButton(self.strings["button_exit"])
-        btn_exit.clicked.connect(self._exit_challenge)
-        layout.addWidget(btn_exit)
+        self.btn_exit = AccessiblePushButton(self.strings["button_exit"])
+        self.btn_exit.clicked.connect(self._exit_challenge)
+        layout.addWidget(self.btn_exit)
         page.setLayout(layout)
         self.pages.addWidget(page)
 
@@ -3109,20 +3303,23 @@ class Week6UI(QWidget):
                 self.base_logic.speaker.output(self.strings["mode_completed"].format(name=mode["name"]))
             if self.logic.is_challenge_complete():
                 self.logic.save_progress()
-                self.pages.setCurrentIndex(2)
                 if self.base_logic.speaker:
                     self.base_logic.speaker.output(self.strings["boss_defeated"])
-                winsound.Beep(2000, 300)
+                self._begin_victory_sequence()
+                return
         else:
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(self.strings["mode_replay"].format(name=mode["name"]))
 
     def _go_to_week_selection(self):
         self.logic.save_progress()
+        self.base_logic.stop_victory_audio()
         self.base_logic.reset()
         self.close()
 
     def _go_to_challenge_battle(self):
+        if hasattr(self, '_victory_banner'):
+            self._victory_banner.setVisible(False)
         self.pages.setCurrentIndex(1)
         self.update_display()
 
@@ -3205,11 +3402,67 @@ class Week6UI(QWidget):
             status_text = self.logic.get_mode_status_text(mode_key)
             btn.setText(f"{data['name']}  {status_text}")
         if self.logic.is_challenge_complete():
-            self.logic.save_progress()
-            self.pages.setCurrentIndex(2)
-            if self.base_logic.speaker:
-                self.base_logic.speaker.output(self.strings["boss_defeated"])
-            winsound.Beep(2000, 500)
+            if not self._victory_sequence_started:
+                self._begin_victory_sequence()
+            return
+
+    def _begin_victory_sequence(self):
+        self._victory_sequence_started = True
+        for btn in self.mode_buttons.values():
+            btn.setEnabled(False)
+        if hasattr(self, 'btn_exit') and self.btn_exit:
+            self.btn_exit.setEnabled(False)
+        self.pages.setCurrentIndex(1)
+        self._show_challenge_congrats_banner()
+        self.logic.save_progress()
+        self._play_fire_sound()
+
+    def _show_challenge_congrats_banner(self):
+        if self.is_english:
+            message = "Final boss defeated! Fire celebration starting..."
+        else:
+            message = "Boss final vaincu ! La fête pyrotechnique commence..."
+        self._victory_banner.update_text(message, message)
+        self._victory_banner.setVisible(True)
+
+    def _play_fire_sound(self):
+        fire_path = os.path.join(self.base_logic.base_dir, "static", "fire.mp3")
+        if not os.path.exists(fire_path):
+            self._show_victory_page()
+            return
+        self._fire_player = QMediaPlayer(self)
+        self._fire_player.setMedia(QMediaContent(QUrl.fromLocalFile(os.path.abspath(fire_path))))
+        self._fire_player.mediaStatusChanged.connect(self._on_fire_media_status_changed)
+        self._fire_player.error.connect(self._on_fire_media_error)
+        self._fire_player.play()
+
+    def _on_fire_media_status_changed(self, status):
+        if status == QMediaPlayer.EndOfMedia:
+            self._show_victory_page()
+        elif status == QMediaPlayer.InvalidMedia:
+            self._show_victory_page()
+
+    def _on_fire_media_error(self, error):
+        self._show_victory_page()
+
+    def _show_victory_page(self):
+        if self.pages.currentIndex() == 2:
+            return
+        self.pages.setCurrentIndex(2)
+        self._play_celebrate_music()
+
+    def _play_celebrate_music(self):
+        celebrate_path = os.path.join(self.base_logic.base_dir, "static", "celebrate.mp3")
+        if not os.path.exists(celebrate_path):
+            return
+        playlist = QMediaPlaylist(self)
+        playlist.addMedia(QMediaContent(QUrl.fromLocalFile(os.path.abspath(celebrate_path))))
+        playlist.setPlaybackMode(QMediaPlaylist.Loop)
+        self._celebrate_player = QMediaPlayer(self)
+        self._celebrate_player.setPlaylist(playlist)
+        self._celebrate_player.setVolume(50)
+        self._celebrate_player.play()
+        self.base_logic.victory_player = self._celebrate_player
 
     def _exit_challenge(self):
         self.logic.save_progress()
@@ -3218,6 +3471,7 @@ class Week6UI(QWidget):
 
     def _go_back(self):
         self.logic.save_progress()
+        self.base_logic.stop_victory_audio()
         self.base_logic.reset()
         self.close()
 
