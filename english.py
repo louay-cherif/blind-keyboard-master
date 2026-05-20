@@ -849,6 +849,7 @@ class AppFrontend(QWidget):
 
         self.w6_name_input = QLineEdit()
         self.w6_name_input.setPlaceholderText("Enter your name...")
+        self.w6_name_input.returnPressed.connect(self.start_week6_challenge)
         layout.addWidget(self.w6_name_input)
 
         # Buttons

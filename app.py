@@ -82,6 +82,7 @@ class AppBackend:
 
     def reset(self):
         """Reset all state variables to initial values"""
+        self.stop_victory_audio()
         self.current_week_idx = 0
         self.current_step_idx = 0
         self.repetition_count = 0
@@ -105,6 +106,15 @@ class AppBackend:
     # returns a cleaned version of the username for log file naming
     def get_clean_username(self):
         return "".join(c for c in self.user_name if c.isalnum() or c in (' ', '_')).rstrip()
+
+    def stop_victory_audio(self):
+        player = getattr(self, 'victory_player', None)
+        if player is not None:
+            try:
+                player.stop()
+            except Exception:
+                pass
+            self.victory_player = None
 
     # returns a log file path with the file named using the cleaned username and current week index
     def get_user_csv_path(self):
