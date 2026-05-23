@@ -502,6 +502,7 @@ class SurvivalMode(QWidget):
         return ", ".join(self._get_pronunciation(c) for c in target)
 
     def _announce_target(self):
+        """Announce target: single char runs timer immediately, multi-char pauses during announcement."""
         self._clear_tts_timers()
         if not (self.base_logic and getattr(self.base_logic, 'speaker', None)):
             self.target_timer.start(self._get_timeout_ms(self.current_target))
@@ -511,9 +512,11 @@ class SurvivalMode(QWidget):
         n = len(target)
 
         if n == 1:
+            # Single char: no delay, timer runs immediately
             self.base_logic.speaker.output(self._get_pronunciation(target))
             self.target_timer.start(self._get_timeout_ms(target))
         else:
+            # Multi-char: pause timer during announcement
             self._pause_timers()
             delay = 0
             for char in target:
@@ -525,11 +528,30 @@ class SurvivalMode(QWidget):
                 self._tts_timers.append(t)
                 delay += len(pron) * 65 + 200
 
+            # Resume timers after announcement completes
             resume_timer = QTimer(self)
             resume_timer.setSingleShot(True)
-            resume_timer.timeout.connect(self._resume_timers)
+            resume_timer.timeout.connect(self._resume_timers_after_announcement)
             resume_timer.start(delay + 300)
             self._tts_timers.append(resume_timer)
+
+    def _resume_timers_after_announcement(self):
+        """Resume timers after multi-char announcement."""
+        if not self._tts_waiting:
+            return
+        self._tts_waiting = False
+        if self.countdown_display.isVisible() and self.countdown_value > 0:
+            self.countdown_timer.start()
+        else:
+            if self.elapsed_seconds < self.SESSION_DURATION:
+                if not self.session_timer.isActive():
+                    self.session_timer.start()
+            if self.current_target:
+                self.target_timer.start(self._get_timeout_ms(self.current_target))
+        try:
+            self.input_field.setFocus()
+        except Exception:
+            pass
 
     def _pause_timers(self):
         self._tts_waiting = True
@@ -554,8 +576,6 @@ class SurvivalMode(QWidget):
             self.input_field.setFocus()
         except Exception:
             pass
-
-    def repeat_current_target(self):
         self._clear_tts_timers()
         self._tts_waiting = False
         self._announce_target()

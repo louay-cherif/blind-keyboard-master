@@ -851,22 +851,24 @@ class ComboTypingMode(GenericTypingMode):
         self.input_field.textChanged.disconnect(self._on_input_changed)
         self.input_field.clear()
         self.input_field.textChanged.connect(self._on_input_changed)
+        
         if self.current_stage == 1:
+            # Single character: no delay, timer runs normally
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(announcement)
-            self.input_field.setEnabled(True)
             self.input_field.setFocus()
             self.target_timer.start(int(self.target_timeout * 1000))
         else:
-            self.input_field.setEnabled(False)
+            # Multi-character: pause timer during announcement
+            self._pause_timers()
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(announcement)
             delay = len(announcement) * 60 + 400
-            QTimer.singleShot(delay, self._enable_combo_input)
+            QTimer.singleShot(delay, self._enable_combo_input_after_announcement)
 
-    def _enable_combo_input(self):
-        winsound.Beep(1000, 150)
-        self.input_field.setEnabled(True)
+    def _enable_combo_input_after_announcement(self):
+        """Resume timers after announcement delay."""
+        self._resume_timers()
         self.input_field.setFocus()
         self.target_start_time = time.time()
         self.target_timer.start(int(self.target_timeout * 1000))
@@ -1024,10 +1026,12 @@ class ComboTypingMode(GenericTypingMode):
             btn_continue_text = f"Continuer à l'étape {self.current_stage + 1}"
             btn_return_text = "Quitter et Retourner au Combat de Défi"
 
+        self.input_field.setEnabled(False)
         dlg = QDialog(self)
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
+        dlg.setWindowModality(Qt.ApplicationModal)
         layout = QVBoxLayout()
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
         title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
@@ -1091,6 +1095,7 @@ class ComboTypingMode(GenericTypingMode):
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
+        dlg.setWindowModality(Qt.ApplicationModal)
         layout = QVBoxLayout()
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
         title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #e94560; background-color: transparent; border: none; padding: 6px;")
@@ -1138,6 +1143,7 @@ class ComboTypingMode(GenericTypingMode):
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
+        dlg.setWindowModality(Qt.ApplicationModal)
         layout = QVBoxLayout()
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
         title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
@@ -1158,6 +1164,7 @@ class ComboTypingMode(GenericTypingMode):
 
     def _end_session_and_return(self, dialog):
         dialog.accept()
+        self.input_field.setEnabled(True)
         self._convert_stage_xp()
         self._update_challenge_state_success()
         self._show_final_results_page()
@@ -1217,10 +1224,12 @@ class ComboTypingMode(GenericTypingMode):
             )
             button_text = "Retour au Combat de Défi"
 
+        self.input_field.setEnabled(False)
         dlg = QDialog(self)
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
+        dlg.setWindowModality(Qt.ApplicationModal)
         layout = QVBoxLayout()
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
         title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
@@ -1294,6 +1303,7 @@ class ComboTypingMode(GenericTypingMode):
         dlg.setWindowTitle("Exit?" if self.is_english else "Quitter ?")
         dlg.setMinimumWidth(480)
         dlg.setStyleSheet(self.styleSheet())
+        dlg.setWindowModality(Qt.ApplicationModal)
         layout = QVBoxLayout()
         msg_text = ("Exit Combo Rush?\n\nA 50 XP penalty will be applied and your session CSV will be deleted." if self.is_english
                     else "Quitter Combo Rush ?\n\nUne penalite de 50 XP sera appliquee et votre CSV de session sera supprime.")
