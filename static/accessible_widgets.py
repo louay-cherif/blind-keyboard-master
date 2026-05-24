@@ -14,19 +14,50 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import os
 from PyQt5.QtWidgets import QPushButton, QLabel, QTextBrowser
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 
 
 class AccessiblePushButton(QPushButton):
     """
     Custom push button that responds to both Space and Enter/Return keys when focused.
     Emits clicked signal on both Space and Return key presses for full keyboard accessibility.
+    Plays a click sound when activated.
     """
+
+    _click_player = None
+    _click_media = None
+
+    @classmethod
+    def _ensure_click_player(cls):
+        if cls._click_player is None:
+            cls._click_player = QMediaPlayer()
+            sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'clicked.mp3')
+            if os.path.exists(sound_path):
+                cls._click_media = QMediaContent(QUrl.fromLocalFile(os.path.abspath(sound_path)))
+                cls._click_player.setMedia(cls._click_media)
+                cls._click_player.setVolume(70)
+            else:
+                cls._click_player = None
+        return cls._click_player
+
+    @classmethod
+    def play_click_sound(cls):
+        player = cls._ensure_click_player()
+        if player is not None:
+            player.stop()
+            player.setPosition(0)
+            player.play()
+
+    def click(self):
+        self.play_click_sound()
+        super().click()
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter):
-            self.clicked.emit()
+            self.click()
             return
         super().keyPressEvent(event)
 
