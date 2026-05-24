@@ -16,10 +16,11 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import os
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout,
                              QLabel)
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 
 from static.accessible_widgets import AccessibleLabel, AccessibleBrowser, AccessiblePushButton
 
@@ -156,6 +157,16 @@ class LanguageSelector(QDialog):
 
         outer.addStretch()
         self.setLayout(outer)
+        self._welcome_player = QMediaPlayer(self)
+        self._play_welcome_sound()
+
+    def _play_welcome_sound(self):
+        welcome_path = os.path.join(_BASE_DIR, "static", "welcome.mp3")
+        if not os.path.exists(welcome_path):
+            return
+        self._welcome_player.setMedia(QMediaContent(QUrl.fromLocalFile(os.path.abspath(welcome_path))))
+        self._welcome_player.setVolume(70)
+        self._welcome_player.play()
 
     def select_language(self, lang):
         self.selected = lang
