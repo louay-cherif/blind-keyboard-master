@@ -26,6 +26,35 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from weeks import Week4Logic
 from static.accessible_widgets import AccessibleBrowser, AccessibleLabel, AccessiblePushButton
 
+
+class TypingInput(QLineEdit):
+    """Input that supports Ctrl repeat, Shift+Enter exit, Shift+Ctrl status."""
+    def __init__(self, parent_widget, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parent_widget = parent_widget
+
+    def keyPressEvent(self, event):
+        # Ctrl alone: repeat target
+        if event.key() == Qt.Key_Control and event.modifiers() == Qt.ControlModifier:
+            if hasattr(self.parent_widget, 'repeat_current_target'):
+                self.parent_widget.repeat_current_target()
+            return
+
+        # Shift+Enter: exit
+        if (event.key() in (Qt.Key_Return, Qt.Key_Enter) and event.modifiers() & Qt.ShiftModifier):
+            if hasattr(self.parent_widget, 'stop_game'):
+                self.parent_widget.stop_game()
+            return
+
+        # Shift+Ctrl: announce status
+        if (event.key() == Qt.Key_Control and event.modifiers() & Qt.ShiftModifier):
+            if hasattr(self.parent_widget, 'announce_status'):
+                self.parent_widget.announce_status()
+            return
+
+        # Default
+        super().keyPressEvent(event)
+
 # Developer picture path
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _PICTURE_PATH = os.path.join(_BASE_DIR, "static", "developer_picture.jpeg")
@@ -270,7 +299,7 @@ class AppFrontend(QWidget):
         self.target_label = QLabel("")
         self.target_label.setAlignment(Qt.AlignCenter)
         self.target_label.setStyleSheet("font-size: 100px; color: #0fecb0; font-weight: bold;")
-        self.input_field = QLineEdit()
+        self.input_field = TypingInput(self)
         self.input_field.textChanged.connect(self.check_input)
         self.score_label = AccessibleLabel(
             visual_text="Score: 0",
@@ -278,10 +307,13 @@ class AppFrontend(QWidget):
         )
         btn_quit = AccessiblePushButton("Quit")
         btn_quit.clicked.connect(self.stop_game)
+        btn_repeat = AccessiblePushButton("Repeat")
+        btn_repeat.clicked.connect(self.repeat_current_target)
         layout.addWidget(self.target_label)
         layout.addWidget(self.input_field)
         layout.addWidget(self.score_label)
         layout.addWidget(btn_quit)
+        layout.addWidget(btn_repeat)
         page.setLayout(layout)
         self.pages.addWidget(page)
 
@@ -541,6 +573,26 @@ class AppFrontend(QWidget):
         winsound.Beep(600, 800)
         self.logic.log_data(self.logic.target, "Error")
         self.next_round()
+
+    def repeat_current_target(self):
+        """Announce or replay the current target similar to Week 6 repeat behavior."""
+        if not self.logic.target:
+            return
+        if self.logic.mode == "WORDS":
+            pronun = self.logic.get_word_pronunciation()
+            if self.logic.speaker:
+                self.logic.speaker.output(pronun["spelling"])
+                QTimer.singleShot(pronun["spelling_delay"], lambda: self.logic.speaker.output(self.logic.target))
+        else:
+            ann = self.logic.get_announcement_text(self.logic.target)
+            if self.logic.speaker:
+                self.logic.speaker.output(ann)
+
+    def announce_status(self):
+        """Announce the current score/status (Shift+Ctrl)."""
+        msg = f"Score: {self.logic.score}."
+        if self.logic.speaker:
+            self.logic.speaker.output(msg)
 
     def stop_game(self):
         self.timer.stop()
