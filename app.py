@@ -23,7 +23,6 @@ import time
 import importlib
 from select_lan import LanguageSelector
 from PyQt5.QtWidgets import QApplication, QDialog
-from weeks import Week4Logic
 
 try:
     from accessible_output2.outputs import auto

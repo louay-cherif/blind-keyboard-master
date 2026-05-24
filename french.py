@@ -54,6 +54,9 @@ class AppFrontend(QWidget):
         self.random_timed_timer = QTimer()
         self.random_timed_timer.timeout.connect(self.update_random_timed_target)
         
+        # Word practice announcement coordination
+        self.word_pronunciation_announcement_id = 0
+        
         # Media player for end-of-week message
         self.player = None
         
@@ -483,24 +486,35 @@ class AppFrontend(QWidget):
         else:
             self.logic.generate_game_target()
             self.target_label.setText(self.logic.target)
+            self.input_field.setEnabled(True)
+            self.input_field.setFocus()
             
+            pronun = self.logic.get_word_pronunciation()
             if self.logic.speaker:
-                self.input_field.setEnabled(False)
-                pronun = self.logic.get_word_pronunciation()
+                self.word_pronunciation_announcement_id += 1
+                announcement_id = self.word_pronunciation_announcement_id
                 self.logic.speaker.output(pronun["spelling"])
                 QTimer.singleShot(pronun["spelling_delay"], 
-                                lambda: self.logic.speaker.output(self.logic.target))
-                QTimer.singleShot(pronun["total_delay"], 
-                                lambda: self.start_counting(pronun["wait_time"]))
+                                lambda aid=announcement_id, pronun=pronun: self._play_word_target_and_schedule_timer(aid, pronun))
             else:
-                wait_time = self.logic.get_word_pronunciation()["wait_time"]
-                self.start_counting(wait_time)
+                self.start_counting(pronun["wait_time"])
 
     def start_counting(self, wait_time):
         self.input_field.setEnabled(True)
         self.input_field.setFocus()
-        winsound.Beep(1000, 150)
         self.timer.start(wait_time)
+
+    def _play_word_target_and_schedule_timer(self, announcement_id, pronun):
+        if announcement_id != self.word_pronunciation_announcement_id:
+            return
+        self.logic.speaker.output(self.logic.target)
+        QTimer.singleShot(pronun["word_audio_delay"],
+                          lambda aid=announcement_id, wait_time=pronun["wait_time"]: self._maybe_start_counting(aid, wait_time))
+
+    def _maybe_start_counting(self, announcement_id, wait_time):
+        if announcement_id != self.word_pronunciation_announcement_id:
+            return
+        self.start_counting(wait_time)
 
     def check_input(self, text):
         result = self.logic.check_game_input(text, self.logic.target)
