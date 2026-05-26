@@ -5,18 +5,34 @@
 
 import random
 import winsound
+import os
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                              QLineEdit, QLabel, QDialog, QTextBrowser, QApplication)
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QUrl
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from weeks import symbol_pronounciation, w6words
 from static.accessible_widgets import AccessiblePushButton, AccessibleLabel, AccessibleBrowser
 import time
-import os
 import csv
 
 # Create aliases for backward compatibility with existing code
 SurvivalAccessibleLabel = AccessibleLabel
 SurvivalAccessibleBrowser = AccessibleBrowser
+
+_survival_sound_player = None
+
+def _play_survival_sound(filename, volume=70):
+    global _survival_sound_player
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, "static", filename)
+    if not os.path.exists(path):
+        return
+    if _survival_sound_player is None:
+        _survival_sound_player = QMediaPlayer()
+    _survival_sound_player.setMedia(QMediaContent(QUrl.fromLocalFile(os.path.abspath(path))))
+    _survival_sound_player.setVolume(volume)
+    _survival_sound_player.play()
 
 
 class SurvivalTypingInput(QLineEdit):
@@ -54,7 +70,6 @@ class SurvivalTypingInput(QLineEdit):
         self.mode.on_typing_key_pressed()
         super().keyPressEvent(event)
 
-# SurvivalMode: main class for the 15-minute endurance challenge.
 
 class SurvivalMode(QWidget):
     """
@@ -187,7 +202,6 @@ class SurvivalMode(QWidget):
 
         quit_text = "Quit" if self.is_english else "Quitter"
         self.quit_btn = AccessiblePushButton(quit_text)
-        # MODIFIED: connect to _on_shift_enter instead of _on_quit
         self.quit_btn.clicked.connect(self._on_shift_enter)
         root.addWidget(self.quit_btn)
 
@@ -660,9 +674,9 @@ class SurvivalMode(QWidget):
             self.current_hearts -= 1
             self._refresh_display()
 
-            winsound.Beep(300, 1500)
-            self.session_timer.stop()
-            self.input_field.setEnabled(False)
+            # play heart-lost audio and preserve original 1500ms pause
+            _play_survival_sound("heart_lost.mp3")
+            QTimer.singleShot(1500, lambda: (self.session_timer.stop(), self.input_field.setEnabled(False)))
 
             if self.current_hearts <= 0:
                 if self.elapsed_seconds >= self.SESSION_DURATION:
@@ -751,12 +765,13 @@ class SurvivalMode(QWidget):
 
         if dlg.exec_() == QDialog.Accepted:
             logic = getattr(self.parent_challenge, 'logic', None)
-            xp    = getattr(logic, 'xp_balance', None) if logic else getattr(self.base_logic, 'xp_balance', None)
+            xp = getattr(logic, 'xp_balance', None) if logic else getattr(self.base_logic, 'xp_balance', None)
             if xp is not None and xp >= 70:
                 if logic and hasattr(logic, 'xp_balance'):
                     logic.xp_balance = max(0, logic.xp_balance - 70)
                 else:
                     self.base_logic.xp_balance = max(0, self.base_logic.xp_balance - 70)
+                _play_survival_sound("paid.mp3")
                 self.current_hearts = 1
                 self.current_danger = 0
                 self._refresh_display()
@@ -788,7 +803,7 @@ class SurvivalMode(QWidget):
         self.session_timer.stop()
         self.target_timer.stop()
         self.countdown_timer.stop()
-        self._session_finished = True          # NEW: prevent further exit dialogs
+        self._session_finished = True          # prevent further exit dialogs
 
         if success:
             self._apply_success_rewards()
@@ -839,6 +854,7 @@ class SurvivalMode(QWidget):
     # ============= RESULT SCREENS =============
 
     def _show_success_screen(self):
+        _play_survival_sound("done.mp3")
         dlg = QDialog(self)
         dlg.setWindowModality(Qt.ApplicationModal)
         dlg.setWindowTitle("SUCCESS!" if self.is_english else "SUCCES !")
@@ -885,6 +901,7 @@ class SurvivalMode(QWidget):
         dlg.exec_()
 
     def _show_failure_screen(self):
+        _play_survival_sound("failure.mp3")
         dlg = QDialog(self)
         dlg.setWindowModality(Qt.ApplicationModal)
         dlg.setWindowTitle("Defeated" if self.is_english else "Vaincu")
