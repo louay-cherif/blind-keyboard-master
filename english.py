@@ -239,7 +239,7 @@ class AppFrontend(QWidget):
         self.result_output.hide()
         
         # 1. مربع الكتابة أصبح هو الأول
-        self.learn_input = QLineEdit()
+        self.learn_input = TypingInput(self)
         self.learn_input.textChanged.connect(self.check_learn_input)
         
         # 2. Character display box  -  AccessibleLabel so screen reader announces
@@ -376,6 +376,18 @@ class AppFrontend(QWidget):
         self.char_display_box.update_text(target, announcement_text)
         if self.logic.speaker:
             self.logic.speaker.output(announcement_text)
+
+    def repeat_current_target(self):
+        """Repeat the current learning target (used by Ctrl shortcut)."""
+        target = self.learn_label.text()
+        if not target:
+            return
+        try:
+            ann = self.logic.get_announcement_text(target)
+        except Exception:
+            ann = target
+        if self.logic.speaker:
+            self.logic.speaker.output(ann)
     
     def update_random_timed_target(self):
         """Update target in random_timed mode - called by timer"""
