@@ -55,6 +55,23 @@ class TypingInput(QLineEdit):
         # Default
         super().keyPressEvent(event)
 
+
+class ResultsInput(QLineEdit):
+    """Input for results page that cycles through letter categories on Enter."""
+    def __init__(self, parent_widget, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parent_widget = parent_widget
+        self.current_category = None  # "weak", "medium", or "strong"
+
+    def keyPressEvent(self, event):
+        # Enter: announce next category
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.parent_widget.announce_next_category()
+            return
+        
+        # Default handling
+        super().keyPressEvent(event)
+
 # Developer picture path
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _PICTURE_PATH = os.path.join(_BASE_DIR, "static", "developer_picture.jpeg")
@@ -86,6 +103,12 @@ class AppFrontend(QWidget):
         # Word practice announcement coordination
         self.word_pronunciation_announcement_id = 0
         
+        # Practice results announcement state
+        self.current_announcement_category = None
+        self.results_weak_category = []
+        self.results_medium_category = []
+        self.results_strong_category = []
+        
         # Media player for end-of-week message
         self.player = None
         
@@ -105,6 +128,7 @@ class AppFrontend(QWidget):
         self.setup_learning_page()
         self.setup_practice_selection()
         self.setup_game_page()
+        self.setup_practice_results_page()
         self.setup_week4_entry_page()
         self.setup_week4_game_page()
         self.setup_week4_end_page()
@@ -317,6 +341,79 @@ class AppFrontend(QWidget):
         page.setLayout(layout)
         self.pages.addWidget(page)
 
+    def setup_practice_results_page(self):
+        """Page 5: Practice results/session end (French version)"""
+        page = QWidget()
+        layout = QVBoxLayout()
+
+        # Title
+        self.results_title = AccessibleLabel(
+            visual_text="PRATIQUE TERMINÉE",
+            accessible_text="Session de pratique terminée.",
+        )
+        self.results_title.setStyleSheet("font-size: 28px; font-weight: bold; color: #0fecb0;")
+        layout.addWidget(self.results_title)
+
+        # Score and accuracy info
+        info_layout = QHBoxLayout()
+        self.results_score_label = AccessibleLabel(
+            visual_text="Score : 0",
+            accessible_text="Score de la session : 0",
+        )
+        self.results_highest_label = AccessibleLabel(
+            visual_text="Meilleur : 0",
+            accessible_text="Meilleur score : 0",
+        )
+        self.results_accuracy_label = AccessibleLabel(
+            visual_text="Précision : 0%",
+            accessible_text="Précision : 0 pour cent",
+        )
+        info_layout.addWidget(self.results_score_label)
+        info_layout.addWidget(self.results_highest_label)
+        info_layout.addWidget(self.results_accuracy_label)
+        layout.addLayout(info_layout)
+
+        # Letter categories with press-Enter announcement
+        self.weak_label = AccessibleLabel(
+            visual_text="Faible : 0 lettres - Appuyez sur Entrée pour annoncer",
+            accessible_text="Lettres faibles : 0. Appuyez sur Entrée pour les annoncer.",
+        )
+        self.weak_label.setStyleSheet("color: #e94560; font-size: 20px;")
+        layout.addWidget(self.weak_label)
+
+        self.medium_label = AccessibleLabel(
+            visual_text="Moyen : 0 lettres - Appuyez sur Entrée pour annoncer",
+            accessible_text="Lettres moyennes : 0. Appuyez sur Entrée pour les annoncer.",
+        )
+        self.medium_label.setStyleSheet("color: #f9d342; font-size: 20px;")
+        layout.addWidget(self.medium_label)
+
+        self.strong_label = AccessibleLabel(
+            visual_text="Fort : 0 lettres - Appuyez sur Entrée pour annoncer",
+            accessible_text="Lettres fortes : 0. Appuyez sur Entrée pour les annoncer.",
+        )
+        self.strong_label.setStyleSheet("color: #0fecb0; font-size: 20px;")
+        layout.addWidget(self.strong_label)
+
+        # Hidden input field for handling Enter key
+        self.results_input = ResultsInput(self)
+        self.results_input.setVisible(False)  # Hidden from view
+        layout.addWidget(self.results_input)
+
+        # Button layout
+        btn_layout = QHBoxLayout()
+        btn_retry = AccessiblePushButton("Recommencer")
+        btn_retry.clicked.connect(self.retry_practice)
+        btn_back = AccessiblePushButton("Retour à la Page de la Semaine")
+        btn_back.clicked.connect(self.go_back_to_week_selection)
+        btn_layout.addWidget(btn_retry)
+        btn_layout.addWidget(btn_back)
+        layout.addLayout(btn_layout)
+
+        layout.addStretch()
+        page.setLayout(layout)
+        self.pages.addWidget(page)
+
     def clear_input_field(self, field):
         """Clear input field without triggering text change signal"""
         field.blockSignals(True)
@@ -507,6 +604,7 @@ class AppFrontend(QWidget):
         self.logic.mode = mode
         self.logic.score = 0
         self.logic.practice_round_counter = 0
+        self.logic.initialize_session_tracking()  # Track session start row index
         self.pages.setCurrentIndex(4)
         if mode == "LETTERS":
             self.logic.initialize_practice_weights()
@@ -608,7 +706,105 @@ class AppFrontend(QWidget):
         self.timer.stop()
         self.practice_minute_timer.stop()
         self.random_timed_timer.stop()  # Stop random_timed timer if active
+        
+        # Calculate session results for letter practice only
+        if self.logic.mode == "LETTERS":
+            results = self.logic.calculate_session_results()
+            
+            # Update results page labels
+            self.results_score_label.update_text(
+                f"Score : {results['score']}",
+                f"Score de la session : {results['score']}"
+            )
+            self.results_highest_label.update_text(
+                f"Meilleur : {results['highest_score']}",
+                f"Meilleur score : {results['highest_score']}"
+            )
+            self.results_accuracy_label.update_text(
+                f"Précision : {results['accuracy']:.1f}%",
+                f"Précision : {results['accuracy']:.1f} pour cent"
+            )
+            
+            # Update letter category labels
+            weak_text = f"Faible : {len(results['weak_letters'])} lettres - Appuyez sur Entrée pour annoncer"
+            weak_accessible = f"Lettres faibles : {len(results['weak_letters'])}. Appuyez sur Entrée pour les annoncer."
+            self.results_weak_category = results['weak_letters']
+            self.weak_label.update_text(weak_text, weak_accessible)
+            
+            medium_text = f"Moyen : {len(results['medium_letters'])} lettres - Appuyez sur Entrée pour annoncer"
+            medium_accessible = f"Lettres moyennes : {len(results['medium_letters'])}. Appuyez sur Entrée pour les annoncer."
+            self.results_medium_category = results['medium_letters']
+            self.medium_label.update_text(medium_text, medium_accessible)
+            
+            strong_text = f"Fort : {len(results['strong_letters'])} lettres - Appuyez sur Entrée pour annoncer"
+            strong_accessible = f"Lettres fortes : {len(results['strong_letters'])}. Appuyez sur Entrée pour les annoncer."
+            self.results_strong_category = results['strong_letters']
+            self.strong_label.update_text(strong_text, strong_accessible)
+            
+            # Log to practice record
+            self.logic.log_practice_record(
+                results['score'],
+                results['accuracy'],
+                results['weak_letters'],
+                results['medium_letters'],
+                results['strong_letters']
+            )
+            
+            # Reset category announcement state
+            self.current_announcement_category = None
+            
+            # Show results page and set focus to results input
+            self.pages.setCurrentIndex(5)
+            self.results_input.setFocus()
+        else:
+            # For word practice, just go back to practice selection
+            self.pages.setCurrentIndex(3)
+
+    def retry_practice(self):
+        """Go back to practice selection page"""
         self.pages.setCurrentIndex(3)
+
+    def go_back_to_week_selection(self):
+        """Reset logic and go back to week selection page"""
+        self.logic.reset()
+        self.pages.setCurrentIndex(0)
+
+    def announce_next_category(self):
+        """Cycle through letter categories and announce them."""
+        # Determine next category
+        if self.current_announcement_category is None:
+            next_category = "weak"
+        elif self.current_announcement_category == "weak":
+            next_category = "medium"
+        elif self.current_announcement_category == "medium":
+            next_category = "strong"
+        else:
+            # Cycle back to weak
+            next_category = "weak"
+        
+        self.current_announcement_category = next_category
+        
+        # Get letters for this category
+        if next_category == "weak":
+            letters = self.results_weak_category
+        elif next_category == "medium":
+            letters = self.results_medium_category
+        else:  # strong
+            letters = self.results_strong_category
+        
+        # Format and announce
+        if letters:
+            letters_text = ", ".join(letters)
+            self.logic.speaker(letters_text)
+            winsound.Beep(1000, 100)  # 1000Hz beep for announcement
+            
+            # Calculate auto-disappear duration (1 second per character)
+            auto_disappear_ms = 1000 * len(letters_text)
+            QTimer.singleShot(auto_disappear_ms, self.clear_announcement_display)
+
+    def clear_announcement_display(self):
+        """Called when announcement display duration expires."""
+        pass  # Letters stay displayed, announcement just expires
 
     def evaluate_practice_adaptivity(self):
         pass

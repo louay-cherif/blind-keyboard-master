@@ -78,6 +78,10 @@ class AppBackend:
         self.practice_round_counter = 0
         self.practice_letter_weights = {}
         self.last_letter_accuracy = {}
+        
+        # Session tracking for results calculation
+        self.session_start_idx = 0  # First row of current session
+        self.session_end_idx = 0    # Last row of current session
 
     def reset(self):
         """Reset all state variables to initial values"""
@@ -100,6 +104,8 @@ class AppBackend:
         self.current_week_config = None
         self.current_week_words = None
         self.loaded_week_idx = None
+        self.session_start_idx = 0
+        self.session_end_idx = 0
 
 
     # returns a cleaned version of the username for log file naming
@@ -263,6 +269,168 @@ class AppBackend:
         except: 
             pass
 
+    def get_practice_record_path(self):
+        """Get path to global practice record CSV for this user."""
+        clean_name = self.get_clean_username()
+        user_dir = os.path.join(self.data_dir, clean_name)
+        os.makedirs(user_dir, exist_ok=True)
+        return os.path.join(user_dir, f"{clean_name}_practice_record.csv")
+
+    def log_practice_record(self, session_score, accuracy_pct, weak_letters, medium_letters, strong_letters):
+        """Log practice session results to global practice record."""
+        if not self.user_name:
+            return
+        record_path = self.get_practice_record_path()
+        file_exists = os.path.isfile(record_path)
+        try:
+            with open(record_path, mode='a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(["Timestamp", "Week", "Type", "Score", "Accuracy%", 
+                                   "Weak_Letters_Count", "Medium_Letters_Count", "Strong_Letters_Count",
+                                   "Weak_Letters", "Medium_Letters", "Strong_Letters"])
+                writer.writerow([
+                    time.strftime("%Y-%m-%d %H:%M:%S"),
+                    self.current_week_idx + 1,
+                    "letter_practice",
+                    session_score,
+                    round(accuracy_pct, 1),
+                    len(weak_letters),
+                    len(medium_letters),
+                    len(strong_letters),
+                    ",".join(weak_letters),
+                    ",".join(medium_letters),
+                    ",".join(strong_letters)
+                ])
+        except:
+            pass
+
+    def initialize_session_tracking(self):
+        """Count existing rows before practice starts to track session indices."""
+        try:
+            file_path = self.get_user_csv_path()
+            if os.path.isfile(file_path):
+                with open(file_path, mode='r', newline='', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    row_count = sum(1 for _ in reader)
+                    self.session_start_idx = row_count  # Next row will be first of current session
+            else:
+                self.session_start_idx = 0  # File doesn't exist yet, first row is 0
+            self.session_end_idx = self.session_start_idx  # Will update as rows are added
+        except:
+            self.session_start_idx = 0
+            self.session_end_idx = 0
+
+    def get_highest_practice_score(self):
+        """Get highest practice score for current week from practice record."""
+        try:
+            record_path = self.get_practice_record_path()
+            if not os.path.isfile(record_path):
+                return 0
+            
+            highest = 0
+            with open(record_path, mode='r', newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if str(row.get("Week", "")) == str(self.current_week_idx + 1):
+                        try:
+                            score = int(row.get("Score", 0))
+                            if score > highest:
+                                highest = score
+                        except:
+                            pass
+            return highest
+        except:
+            return 0
+
+    def calculate_session_results(self):
+        """Calculate session accuracy and categorize letters from CURRENT SESSION ONLY.
+        Only analyzes rows from session_start_idx to end of file (session_end_idx).
+        Returns: {
+            'score': current_score,
+            'highest_score': highest_previous_score,
+            'accuracy': accuracy_percent,
+            'weak_letters': [letters with <50% accuracy],
+            'medium_letters': [letters with 50-90% accuracy],
+            'strong_letters': [letters with >90% accuracy]
+        }
+        """
+        try:
+            file_path = self.get_user_csv_path()
+            if not os.path.isfile(file_path):
+                return {
+                    'score': self.score,
+                    'highest_score': self.get_highest_practice_score(),
+                    'accuracy': 0,
+                    'weak_letters': [],
+                    'medium_letters': [],
+                    'strong_letters': []
+                }
+            
+            # Calculate accuracy from CURRENT SESSION ONLY (rows from session_start_idx onwards)
+            letter_stats = {}
+            current_row = 0
+            with open(file_path, mode='r', newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # Skip rows before current session starts
+                    if current_row < self.session_start_idx:
+                        current_row += 1
+                        continue
+                    
+                    current_row += 1
+                    char = row.get("Character", "")
+                    status = row.get("Status", "")
+                    if char:
+                        if char not in letter_stats:
+                            letter_stats[char] = {'correct': 0, 'total': 0}
+                        letter_stats[char]['total'] += 1
+                        if status == "Correct":
+                            letter_stats[char]['correct'] += 1
+            
+            # Categorize letters
+            weak = []
+            medium = []
+            strong = []
+            total_correct = 0
+            total_attempts = 0
+            
+            for char, stats in letter_stats.items():
+                accuracy = (stats['correct'] / stats['total'] * 100) if stats['total'] > 0 else 0
+                total_correct += stats['correct']
+                total_attempts += stats['total']
+                
+                if accuracy < 50:
+                    weak.append(char)
+                elif accuracy <= 90:
+                    medium.append(char)
+                else:
+                    strong.append(char)
+            
+            # Sort for consistent display
+            weak.sort()
+            medium.sort()
+            strong.sort()
+            
+            session_accuracy = (total_correct / total_attempts * 100) if total_attempts > 0 else 0
+            
+            return {
+                'score': self.score,
+                'highest_score': self.get_highest_practice_score(),
+                'accuracy': session_accuracy,
+                'weak_letters': weak,
+                'medium_letters': medium,
+                'strong_letters': strong
+            }
+        except:
+            return {
+                'score': self.score,
+                'highest_score': self.get_highest_practice_score(),
+                'accuracy': 0,
+                'weak_letters': [],
+                'medium_letters': [],
+                'strong_letters': []
+            }
 
             # this function works for the learning section only
     def generate_random_timed_char(self):
