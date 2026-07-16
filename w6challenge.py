@@ -26,8 +26,8 @@ from turtle import delay
 import winsound
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                              QLineEdit, QLabel, QStackedWidget, QDialog, QApplication, QMessageBox,
-                             QTextBrowser, QFrame)
-from PyQt5.QtCore import Qt, QTimer, QUrl, QEvent
+                             QTextBrowser)
+from PyQt5.QtCore import Qt, QTimer, QUrl
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent, QMediaPlaylist
 from weeks import symbol_pronounciation, w6words
@@ -41,20 +41,6 @@ def _format_uppercase_announcement(char, is_english):
     if char == "Y":
         return "ay capital" if is_english else "i grec majuscule"
     return f"{char.lower()} capital" if is_english else f"{char.lower()} majuscule"
-
-
-_w6_sound_player = None
-
-def _play_w6_sound(filename, volume=70):
-    global _w6_sound_player
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", filename)
-    if not os.path.exists(path):
-        return
-    if _w6_sound_player is None:
-        _w6_sound_player = QMediaPlayer()
-    _w6_sound_player.setMedia(QMediaContent(QUrl.fromLocalFile(os.path.abspath(path))))
-    _w6_sound_player.setVolume(volume)
-    _w6_sound_player.play()
 
 
 # ============= SHARED TYPING INPUT WITH KEYBOARD SHORTCUTS =============
@@ -865,27 +851,22 @@ class ComboTypingMode(GenericTypingMode):
         self.input_field.textChanged.disconnect(self._on_input_changed)
         self.input_field.clear()
         self.input_field.textChanged.connect(self._on_input_changed)
-        
         if self.current_stage == 1:
-            # Single character: no delay, timer runs normally
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(announcement)
+            self.input_field.setEnabled(True)
             self.input_field.setFocus()
             self.target_timer.start(int(self.target_timeout * 1000))
         else:
-            # Multi-character: pause timer during announcement
-            # Pause only timers (do NOT disable input). Resume after delay or on user action.
-            self._pause_timers()
-            # Install a temporary event filter so any user click/keypress resumes early
-            self._install_resume_on_user_action()
+            self.input_field.setEnabled(False)
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(announcement)
             delay = len(announcement) * 60 + 400
-            QTimer.singleShot(delay, self._resume_timers)
+            QTimer.singleShot(delay, self._enable_combo_input)
 
-    def _enable_combo_input_after_announcement(self):
-        """Resume timers after announcement delay."""
-        self._resume_timers()
+    def _enable_combo_input(self):
+        winsound.Beep(1000, 150)
+        self.input_field.setEnabled(True)
         self.input_field.setFocus()
         self.target_start_time = time.time()
         self.target_timer.start(int(self.target_timeout * 1000))
@@ -1043,12 +1024,10 @@ class ComboTypingMode(GenericTypingMode):
             btn_continue_text = f"Continuer à l'étape {self.current_stage + 1}"
             btn_return_text = "Quitter et Retourner au Combat de Défi"
 
-        self.input_field.setEnabled(False)
         dlg = QDialog(self)
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
-        dlg.setWindowModality(Qt.ApplicationModal)
         layout = QVBoxLayout()
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
         title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
@@ -1099,7 +1078,6 @@ class ComboTypingMode(GenericTypingMode):
         self._show_final_results_page()
 
     def _show_failure_page(self):
-        _play_w6_sound("error.mp3")
         if self.is_english:
             title = "ACCURACY TOO LOW"
             message = f"Final Accuracy: {self.session_accuracy:.1f}%\n\nYou need at least 70% accuracy to complete Combo Mode.\nPlease try again later!"
@@ -1113,7 +1091,6 @@ class ComboTypingMode(GenericTypingMode):
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
-        dlg.setWindowModality(Qt.ApplicationModal)
         layout = QVBoxLayout()
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
         title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #e94560; background-color: transparent; border: none; padding: 6px;")
@@ -1161,7 +1138,6 @@ class ComboTypingMode(GenericTypingMode):
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
-        dlg.setWindowModality(Qt.ApplicationModal)
         layout = QVBoxLayout()
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
         title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
@@ -1182,7 +1158,6 @@ class ComboTypingMode(GenericTypingMode):
 
     def _end_session_and_return(self, dialog):
         dialog.accept()
-        self.input_field.setEnabled(True)
         self._convert_stage_xp()
         self._update_challenge_state_success()
         self._show_final_results_page()
@@ -1242,12 +1217,10 @@ class ComboTypingMode(GenericTypingMode):
             )
             button_text = "Retour au Combat de Défi"
 
-        self.input_field.setEnabled(False)
         dlg = QDialog(self)
         dlg.setWindowTitle(title)
         dlg.setMinimumWidth(520)
         dlg.setStyleSheet(self.styleSheet())
-        dlg.setWindowModality(Qt.ApplicationModal)
         layout = QVBoxLayout()
         title_label = AccessibleLabel(visual_text=title, accessible_text=title)
         title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #0fecb0; background-color: transparent; border: none; padding: 6px;")
@@ -1279,56 +1252,17 @@ class ComboTypingMode(GenericTypingMode):
 
     def _pause_timers(self):
         self._tts_waiting = True
-        # stop timers but keep input enabled
-        try:
-            self.session_timer.stop()
-        except Exception:
-            pass
-        try:
-            self.target_timer.stop()
-        except Exception:
-            pass
-        # listen for any user click/keypress to resume early
-        self._install_resume_on_user_action()
+        self.session_timer.stop()
+        self.target_timer.stop()
 
     def _resume_timers(self):
         if not self._tts_waiting:
             return
         self._tts_waiting = False
-        # stop listening for early resume
-        self._remove_resume_on_user_action()
-        try:
-            if not self.session_timer.isActive():
-                self.session_timer.start()
-        except Exception:
-            pass
-        try:
-            self.target_timer.start(int(self.target_timeout * 1000))
-        except Exception:
-            pass
+        if not self.session_timer.isActive():
+            self.session_timer.start()
+        self.target_timer.start(int(self.target_timeout * 1000))
         self.input_field.setFocus()
-
-    def _install_resume_on_user_action(self):
-        if getattr(self, '_resume_filter_installed', False):
-            return
-        self._resume_filter_installed = True
-        self.installEventFilter(self)
-
-    def _remove_resume_on_user_action(self):
-        if getattr(self, '_resume_filter_installed', False):
-            try:
-                self.removeEventFilter(self)
-            except Exception:
-                pass
-            self._resume_filter_installed = False
-
-    def eventFilter(self, obj, event):
-        # Resume timers early on mouse click or any key press while waiting
-        if getattr(self, '_tts_waiting', False):
-            if event.type() in (QEvent.MouseButtonPress, QEvent.KeyPress):
-                self._resume_timers()
-                return False
-        return super().eventFilter(obj, event)
 
     def on_typing_key_pressed(self):
         if self._tts_waiting:
@@ -1360,7 +1294,6 @@ class ComboTypingMode(GenericTypingMode):
         dlg.setWindowTitle("Exit?" if self.is_english else "Quitter ?")
         dlg.setMinimumWidth(480)
         dlg.setStyleSheet(self.styleSheet())
-        dlg.setWindowModality(Qt.ApplicationModal)
         layout = QVBoxLayout()
         msg_text = ("Exit Combo Rush?\n\nA 50 XP penalty will be applied and your session CSV will be deleted." if self.is_english
                     else "Quitter Combo Rush ?\n\nUne penalite de 50 XP sera appliquee et votre CSV de session sera supprime.")
@@ -1713,14 +1646,12 @@ class PrecisionArenaMode(QWidget):
             self.input_field.setEnabled(True)
             self.input_field.setFocus()
         else:
-            # Multi-char targets: pause session (don't disable input). Resume after announcement delay or on user action.
-            self._pause_timers()
-            self._install_resume_on_user_action()
+            self.input_field.setEnabled(False)
             if self.base_logic.speaker:
                 self.base_logic.speaker.output(announcement)
             total_ann_len = sum(len(a) for a in char_announcements)
             delay = total_ann_len * 65 + 400
-            QTimer.singleShot(delay, self._resume_timers)
+            QTimer.singleShot(delay, self._enable_input_with_beep)
 
     def _enable_input_with_beep(self):
         winsound.Beep(1000, 100)
@@ -1982,57 +1913,19 @@ class PrecisionArenaMode(QWidget):
             return
         char_announcements = [self._get_char_announcement(c) for c in self.current_target]
         ann = ", ".join(char_announcements)
-        if len(self.current_target) > 1:
-            # Pause timers (do not disable input) and resume after announcement or on user action
-            self._pause_timers()
-            self._install_resume_on_user_action()
-            if self.base_logic.speaker:
-                self.base_logic.speaker.output(ann)
-            total_ann_len = sum(len(a) for a in char_announcements)
-            delay = total_ann_len * 65 + 400
-            QTimer.singleShot(delay, self._resume_timers)
-            return
         if self.base_logic.speaker:
             self.base_logic.speaker.output(ann)
 
     def _pause_timers(self):
         if not self._announcement_paused:
             self._announcement_paused = True
-            try:
-                self.session_timer.stop()
-            except Exception:
-                pass
-            # listen for any user action to resume early
-            self._install_resume_on_user_action()
+            self.session_timer.stop()
 
     def _resume_timers(self):
         if self._announcement_paused:
             self._announcement_paused = False
-            # stop listening for early resume
-            self._remove_resume_on_user_action()
             if not self.session_timer.isActive() and self.session_elapsed < self.SESSION_DURATION:
                 self.session_timer.start(1000)
-
-    def _install_resume_on_user_action(self):
-        if getattr(self, '_resume_filter_installed', False):
-            return
-        self._resume_filter_installed = True
-        self.installEventFilter(self)
-
-    def _remove_resume_on_user_action(self):
-        if getattr(self, '_resume_filter_installed', False):
-            try:
-                self.removeEventFilter(self)
-            except Exception:
-                pass
-            self._resume_filter_installed = False
-
-    def eventFilter(self, obj, event):
-        if getattr(self, '_announcement_paused', False):
-            if event.type() in (QEvent.MouseButtonPress, QEvent.KeyPress):
-                self._resume_timers()
-                return False
-        return super().eventFilter(obj, event)
 
     def on_typing_key_pressed(self):
         if self._announcement_paused:
@@ -2281,7 +2174,6 @@ class CrazyParty(QWidget):
             self.close()
             return
         xp_src.xp_balance -= self.TICKET_COST
-        _play_w6_sound("paid.mp3")
         if logic:
             logic.save_progress()
         self._reset_state()
@@ -2784,23 +2676,10 @@ class CrazyParty(QWidget):
 
     def _check_safe_zone(self):
         if not self.ticket_refunded and self.session_xp_earned >= self.SAFE_ZONE_XP:
-            # Enter safe zone: pause targets for 3 seconds, play safe zone sound, then announce and resume
             self.ticket_refunded = True
-            # Pause timers and clear current target display
-            self._pause_timers()
-            self.target_display.update_text("", "")
-            # Play safe zone sound (non-blocking) and show 3s pause with no target
-            _play_w6_sound("safe_zone.mp3")
-            QTimer.singleShot(3000, lambda: self._after_safe_zone_reached())
-
-    def _after_safe_zone_reached(self):
-        # Announce and resume normal session flow
-        msg = ("Safe zone reached! Ticket refunded. Keep earning!" if self.is_english else "Zone sure atteinte ! Billet rembourse. Continuez !")
-        if self.base_logic.speaker:
-            self.base_logic.speaker.output(msg)
-        # Resume timers and next target
-        self._resume_timers()
-        self._next_target()
+            msg = ("Safe zone reached! Ticket refunded. Keep earning!" if self.is_english else "Zone sure atteinte ! Billet rembourse. Continuez !")
+            if self.base_logic.speaker:
+                self._delayed_speak(msg, delay=400)
 
     def _announce_status(self):
         self._pause_timers()   # stop both timers
@@ -3001,10 +2880,6 @@ class CrazyParty(QWidget):
                 btn.clicked.connect(dlg.accept)
             btn_row.addWidget(btn)
         layout.addLayout(btn_row)
-        if any(keyword in title for keyword in ["Success", "Succès", "SUCCESS", "SUCCES"]):
-            _play_w6_sound("done.mp3")
-        elif any(keyword in title for keyword in ["Defeated", "Vaincu", "Failure", "Failed", "Echec"]):
-            _play_w6_sound("retry.mp3")
         dlg.setLayout(layout)
         dlg.exec_()
 
@@ -3171,8 +3046,6 @@ class Week6UI(QWidget):
         self._fire_player = None
         self._celebrate_player = None
         self._victory_sequence_started = False
-        self._sound_player = QMediaPlayer(self)
-        self._played_unlock_modes = {k for k, v in self.logic.modes.items() if v['status'] != 'locked'}
         self.setStyleSheet("""
             QWidget      { background-color: #0a0a12; color: #ffffff;
                            font-family: Arial; font-size: 24px; }
@@ -3290,11 +3163,9 @@ class Week6UI(QWidget):
         self.rank_display = AccessibleLabel(visual_text=self.strings["rank_visual"].format(rank=init_rank), accessible_text=self.strings["rank_accessible"].format(rank=init_rank))
         stats_layout.addWidget(self.rank_display)
         layout.addLayout(stats_layout)
-        separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        separator.setStyleSheet("color: #444; background: transparent; margin: 8px 0;")
-        layout.addWidget(separator)
+        sep = AccessibleLabel(visual_text="-" * 40, accessible_text="")
+        sep.setStyleSheet("color: #444; background: transparent; border: none; font-size: 16px;")
+        layout.addWidget(sep)
         self._victory_banner = AccessibleLabel(visual_text="", accessible_text="")
         self._victory_banner.setStyleSheet("font-size: 24px; font-weight: bold; color: #f9d342; background-color: transparent; border: none; padding: 10px;")
         self._victory_banner.setVisible(False)
@@ -3528,9 +3399,6 @@ class Week6UI(QWidget):
         self.rank_display.update_text(self.strings["rank_visual"].format(rank=rank), self.strings["rank_accessible"].format(rank=rank))
         for mode_key, btn in self.mode_buttons.items():
             data = self.logic.modes[mode_key]
-            if data["status"] == "unlocked" and mode_key not in self._played_unlock_modes:
-                self._played_unlock_modes.add(mode_key)
-                _play_w6_sound("unlocked.mp3")
             status_text = self.logic.get_mode_status_text(mode_key)
             btn.setText(f"{data['name']}  {status_text}")
         if self.logic.is_challenge_complete():
@@ -3580,7 +3448,6 @@ class Week6UI(QWidget):
     def _show_victory_page(self):
         if self.pages.currentIndex() == 2:
             return
-        _play_w6_sound("done.mp3")
         self.pages.setCurrentIndex(2)
         self._play_celebrate_music()
 
